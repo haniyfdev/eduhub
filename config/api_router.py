@@ -1,0 +1,28 @@
+from django.urls import path, include
+
+urlpatterns = [
+    path('companies/', include('apps.companies.urls')),
+    path('users/', include('apps.users.api_urls')),
+    path('teachers/', include('apps.teachers.urls')),
+    path('students/', include('apps.students.urls')),
+    path('groups/', include('apps.groups.urls')),
+    path('courses/', include('apps.courses.urls')),
+    path('lessons/', include('apps.lessons.urls')),
+    path('payments/', include('apps.payments.urls')),
+    path('debts/', include('apps.debts.urls')),
+    path('discounts/', include('apps.discounts.urls')),
+    path('sms-templates/', include('apps.notifications.sms_urls')),
+    path('awards/', include('apps.awards.urls')),
+    path('expenses/', include('apps.expenses.urls')),
+    path('staff-salaries/', include('apps.salaries.staff_urls')),
+    path('teacher-salaries/', include('apps.salaries.teacher_urls')),
+    path('audit-logs/', include('apps.audit.urls')),
+    path('notifications/', include('apps.notifications.urls')),
+    path('subscriptions/', include('apps.subscriptions.urls')),
+    path('dashboard/', include('apps.companies.dashboard_urls')),
+    path('profit-loss/', include('apps.expenses.pl_urls')),
+    path('company-settings/', include('apps.companies.settings_urls')),
+    path('staff-kpi-rules/', include('apps.salaries.kpi_urls')),
+    path('grades/', include('apps.grades.urls')),
+    path('student-notes/', include('apps.notes.urls')),
+]

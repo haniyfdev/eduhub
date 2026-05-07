@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+staticfiles/
+venv/
+*.sqlite3
+.DS_Store
+node_modules/
+*.log
+celerybeat-schedule
+celerybeat.pid
+.coverage
+htmlcov/
+.claude/

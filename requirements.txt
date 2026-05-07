@@ -1,0 +1,21 @@
+Django
+djangorestframework
+djangorestframework-simplejwt
+django-filter
+django-cors-headers
+django-celery-beat
+django-redis
+python-decouple
+Pillow
+gunicorn
+requests
+psycopg2-binary
+celery
+redis
+whitenoise
+dj-database-url
+
+# Development / testing
+pytest
+pytest-django
+faker
