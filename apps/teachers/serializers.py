@@ -17,7 +17,7 @@ class TeacherSerializer(serializers.ModelSerializer):
             'kpi_bonus', 'status', 'hired_at', 'archived_at', 'created_at',
             'all_students',
         )
-        read_only_fields = ('id', 'company', 'created_at', 'archived_at')
+        read_only_fields = ('id', 'company', 'hired_at', 'created_at', 'archived_at')
 
 
 class TeacherCreateSerializer(serializers.ModelSerializer):
@@ -34,7 +34,7 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
             'subject', 'birth_date', 'salary_type', 'fixed_amount', 'salary_percent', 'per_student_amt',
             'kpi_bonus', 'hired_at',
         )
-        read_only_fields = ('id',)
+        read_only_fields = ('id', 'hired_at')
 
     def validate_phone(self, value):
         from apps.users.models import User
