@@ -15,7 +15,7 @@ from .serializers import TeacherSerializer, TeacherCreateSerializer, TeacherSala
 
 class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
-    filterset_fields = ['status']
+    filterset_fields = ['status', 'subject']
 
     def get_queryset(self):
         qs = Teacher.objects.select_related('user').annotate(
