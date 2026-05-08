@@ -4,7 +4,9 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.filters import SearchFilter
 
+from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from utils.permissions import IsBossManagerOrAdmin
 from .models import Student
@@ -22,8 +24,10 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             output_field=IntegerField(),
         )
     ).order_by('status_order', 'last_name', 'first_name')
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
-    filterset_fields = ['status', 'course', 'referral_source']
+    filterset_fields  = ['status', 'course', 'referral_source']
+    search_fields     = ['first_name', 'last_name'] 
 
     def get_permissions(self):
         return [IsAuthenticated()]
