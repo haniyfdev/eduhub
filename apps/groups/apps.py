@@ -5,3 +5,6 @@ class GroupsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'apps.groups'
 
+    def ready(self):
+        import apps.groups.signals  # noqa: F401
+
