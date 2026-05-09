@@ -7,7 +7,7 @@ from utils.mixins import CompanyFilterMixin
 from utils.permissions import IsBossOrManager, IsTeacher
 from .models import Lesson
 from .serializers import LessonSerializer, LessonCreateSerializer
-from datetime import timezone
+from django.utils import timezone
 
 
 class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
