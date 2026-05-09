@@ -35,14 +35,20 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         return LessonSerializer
 
     def perform_create(self, serializer):
-        user = self.request.user
-        if user.role == 'teacher':
-            teacher = user.teacher
-        else:
-            # boss/manager/admin providing a group — derive teacher from group
-            group = serializer.validated_data['group']
-            teacher = group.teacher
-        serializer.save(teacher=teacher)
+        try:
+            user = self.request.user
+            if user.role == 'teacher':
+                teacher = user.teacher
+            else:
+                # boss/manager/admin providing a group — derive teacher from group
+                group = serializer.validated_data['group']
+                teacher = group.teacher
+            serializer.save(teacher=teacher)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Lesson create error: str({e})", exc_info=True)
+            raise
 
     # ── nested attendance ────────────────────────────────────────
 
