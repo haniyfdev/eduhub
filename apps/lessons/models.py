@@ -8,7 +8,14 @@ class Lesson(BaseModel):
     topic = models.CharField(max_length=255)
     date = models.DateField()
     note = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    # created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)  # dars boshlangan vaqt
+    finished_at = models.DateTimeField(null=True, blank=True)  # dars tugagan vaqt
+    status = models.CharField(
+        max_length=20,
+        choices=[('pending', 'Pending'), ('ongoing', 'Ongoing'), ('finished', 'Finished')],
+        default='pending',
+    )
 
     class Meta:
         db_table = 'lessons'

@@ -10,9 +10,9 @@ class LessonSerializer(serializers.ModelSerializer):
         model = Lesson
         fields = (
             'id', 'group', 'group_display', 'teacher', 'teacher_name',
-            'topic', 'date', 'note', 'created_at',
+            'topic', 'date', 'note', 'started_at', 'finished_at', 'status',
         )
-        read_only_fields = ('id', 'teacher', 'created_at')
+        read_only_fields = ('id', 'teacher', 'started_at', 'finished_at')
 
 
 class LessonCreateSerializer(serializers.ModelSerializer):

@@ -7,6 +7,7 @@ from utils.mixins import CompanyFilterMixin
 from utils.permissions import IsBossOrManager, IsTeacher
 from .models import Lesson
 from .serializers import LessonSerializer, LessonCreateSerializer
+from datetime import timezone
 
 
 class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
@@ -70,6 +71,10 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
             )
             created.append(obj)
 
+        lesson.finished_at = timezone.now()
+        lesson.status = 'finished'
+        lesson.save(update_fields=['finished_at', 'status'])
+
         return Response(AttendanceSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
 
     # ── nested grades ────────────────────────────────────────────
@@ -100,3 +105,14 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
             created.append(obj)
 
         return Response(GradeSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+
+    # ── started/finished times ────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='start')
+    def start(self, request, pk=None):
+        lesson = self.get_object()
+        from django.utils import timezone
+        lesson.started_at = timezone.now()
+        lesson.status = 'ongoing'
+        lesson.save(update_fields=['started_at', 'status'])
+        return Response(LessonSerializer(lesson).data)
