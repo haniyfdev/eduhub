@@ -7,12 +7,13 @@ from .models import Payment
 class PaymentSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     course_name = serializers.CharField(source='course.name', read_only=True)
+    group_display = serializers.CharField(source='group.display_name', read_only=True)
 
     class Meta:
         model = Payment
         fields = (
             'id', 'company', 'student', 'student_name', 'group', 'course', 'course_name',
-            'discount', 'amount', 'payment_type', 'note', 'paid_at',
+            'discount', 'amount', 'payment_type', 'note', 'paid_at', 'group_display'
         )
         read_only_fields = ('id', 'company', 'amount', 'paid_at')
 
