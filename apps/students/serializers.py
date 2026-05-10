@@ -43,6 +43,12 @@ class StudentCreateSerializer(serializers.ModelSerializer):
             'id', 'first_name', 'last_name', 'phone', 'second_phone',
             'birth_date', 'course', 'referral_source',
         )
+
+        extra_kwargs = {
+            'course': {'required': True, 'allow_null': False},
+            'birth_date': {'required': True, 'allow_null': False},
+        }
+        
         read_only_fields = ('id',)
  
  
