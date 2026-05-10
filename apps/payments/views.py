@@ -50,10 +50,17 @@ class PaymentViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         return qs
 
     def create(self, request, *args, **kwargs):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Payment create data: {request.data}")
         serializer = PaymentCreateSerializer(
             data=request.data,
             context={'company': request.user.company, 'request': request},
         )
         serializer.is_valid(raise_exception=True)
-        payment = serializer.save()
+        try:
+            payment = serializer.save()
+        except Exception as e:
+            logger.error(f"Payment save error: {e}", exc_info=True)
+            raise
         return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
