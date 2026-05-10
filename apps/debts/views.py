@@ -50,6 +50,7 @@ class DebtViewSet(
             qs = qs.filter(
                 Q(student__first_name__icontains=search) |
                 Q(student__last_name__icontains=search) |
+                Q(student__group_memberships__group__name__icontains=search) |
                 Q(student__group_memberships__group__number__icontains=search)
             ).distinct()
  
