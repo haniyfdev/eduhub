@@ -28,14 +28,25 @@ class PaymentViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         return PaymentSerializer
 
     def get_queryset(self):
+        from django.db.models import Q
         qs = super().get_queryset()
-        month = self.request.query_params.get('month')  # e.g. 2026-05
+        month = self.request.query_params.get('month')
         if month:
             try:
                 year, mon = month.split('-')
                 qs = qs.filter(paid_at__year=int(year), paid_at__month=int(mon))
             except ValueError:
                 pass
+        search = self.request.query_params.get('search', '')
+        if search:
+            q = (
+                Q(student__first_name__icontains=search) |
+                Q(student__last_name__icontains=search) |
+                Q(group__gender_type__icontains=search)
+            )
+            if search.isdigit():
+                q |= Q(group__number=int(search))
+            qs = qs.filter(q).distinct()
         return qs
 
     def create(self, request, *args, **kwargs):
