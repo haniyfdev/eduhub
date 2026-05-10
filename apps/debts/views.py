@@ -47,12 +47,14 @@ class DebtViewSet(
         # Search — ism, familiya yoki guruh nomi
         search = self.request.query_params.get('search', '')
         if search:
-            qs = qs.filter(
+            q = (
                 Q(student__first_name__icontains=search) |
                 Q(student__last_name__icontains=search) |
-                Q(student__group_memberships__group__name__icontains=search) |
-                Q(student__group_memberships__group__number__icontains=search)
-            ).distinct()
+                Q(student__group_memberships__group__gender_type__icontains=search)
+            )
+            if search.isdigit():
+                q |= Q(student__group_memberships__group__number=int(search))
+            qs = qs.filter(q).distinct()
  
         return qs
  
