@@ -112,9 +112,12 @@ class PaymentCreateSerializer(serializers.Serializer):
             pass  # debt not yet assigned (first payment before billing cycle)
 
         # Step 5 — send confirmation SMS asynchronously (Rule 6)
-        send_payment_confirmation_sms.delay(
-            str(validated_data['student'].id),
-            str(validated_data['final_amount']),
-        )
+        try:
+            send_payment_confirmation_sms.delay(
+                str(validated_data['student'].id),
+                str(validated_data['final_amount']),
+            )
+        except Exception as e:
+            pass
 
         return payment
