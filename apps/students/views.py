@@ -5,7 +5,6 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.filters import SearchFilter
  
 from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
@@ -34,14 +33,29 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         )
     ).order_by('status_order', 'last_name', 'first_name')
  
-    filter_backends   = [DjangoFilterBackend, SearchFilter]
+    filter_backends   = [DjangoFilterBackend]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
     filterset_fields  = ['status', 'course', 'referral_source']
     search_fields     = ['first_name', 'last_name']
  
     def get_permissions(self):
         return [IsAuthenticated()]
- 
+    
+    def get_queryset(self):
+        from django.db.models import Q
+        qs = super().get_queryset()
+        search = self.request.query_params.get('search', '')
+        if search:
+            q = (
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(group_memberships__group__gender_type__icontains=search)
+            )
+            if search.isdigit():
+                q |= Q(group_memberships__group__number=int(search))
+            qs = qs.filter(q).distinct()
+        return qs
+
     def get_serializer_class(self):
         if self.action == 'create':
             return StudentCreateSerializer
