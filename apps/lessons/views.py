@@ -116,9 +116,33 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='start')
     def start(self, request, pk=None):
-        lesson = self.get_object()
         from django.utils import timezone
+        from apps.students.models import Student
+
+        lesson = self.get_object()
         lesson.started_at = timezone.now()
         lesson.status = 'ongoing'
         lesson.save(update_fields=['started_at', 'status'])
+
+        # Guruhda nechta tugallangan dars bor?
+        finished_count = lesson.group.lessons.filter(status='finished').count()
+
+        if finished_count == 0:
+            # Bu birinchi dars — kelgan o'quvchilar trial ga o'tadi
+            student_ids = lesson.group.memberships.filter(
+                left_at__isnull=True
+            ).values_list('student_id', flat=True)
+            Student.objects.filter(
+                id__in=student_ids, status='pending'
+            ).update(status='trial')
+
+        elif finished_count == 1:
+            # Bu ikkinchi dars boshlanayapti — hammasi active ga o'tadi
+            student_ids = lesson.group.memberships.filter(
+                left_at__isnull=True
+            ).values_list('student_id', flat=True)
+            Student.objects.filter(
+                id__in=student_ids, status='trial'
+            ).update(status='active')
+
         return Response(LessonSerializer(lesson).data)
