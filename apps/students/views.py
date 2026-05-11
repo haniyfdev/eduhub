@@ -31,7 +31,7 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             default=5,
             output_field=IntegerField(),
         )
-    ).order_by('status_order', 'last_name', 'first_name')
+    ).order_by('status_order', 'created_at')
  
     filter_backends   = [DjangoFilterBackend]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
