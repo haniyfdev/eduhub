@@ -1,5 +1,6 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
+from django_filters.rest_framework import DjangoFilterBackend
 
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from utils.permissions import IsBossOrManager
@@ -9,6 +10,8 @@ from .serializers import CourseSerializer, CourseCreateSerializer
 
 class CourseViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     queryset = Course.objects.prefetch_related('teachers__user').order_by('name')
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['status']
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_permissions(self):
