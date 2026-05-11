@@ -1,9 +1,12 @@
 from django.db.models import Case, IntegerField, When
+from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.filters import SearchFilter
 
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from utils.permissions import IsBossManagerOrAdmin
@@ -21,7 +24,9 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         )
     ).order_by('status_order', 'number')
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['status', 'course', 'teacher']
+    search_fields = ['number', 'gender_type', 'teacher__user__first_name', 'teacher__user__last_name']
 
     def get_permissions(self):
         return [IsAuthenticated()]
