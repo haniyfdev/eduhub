@@ -67,11 +67,6 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
         GroupStudent.objects.create(group=group, student=student, joined_at=timezone.now())
 
-        # Transition student status to active
-        if student.status in ('pending', 'trial'):
-            student.status = 'active'
-            student.save(update_fields=['status'])
-
         return Response({'status': 'student added'}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='remove-student')
