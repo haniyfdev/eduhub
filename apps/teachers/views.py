@@ -2,11 +2,14 @@ from datetime import date
 
 from django.db.models import Case, Count, IntegerField, Q, When
 from django.utils import timezone
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.filters import SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from utils.permissions import IsBossOrManager
 from .models import Teacher
@@ -15,7 +18,9 @@ from .serializers import TeacherSerializer, TeacherCreateSerializer, TeacherSala
 
 class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['status', 'subject']
+    search_fields = ['user__first_name', 'user__last_name']
 
     def get_queryset(self):
         qs = Teacher.objects.select_related('user').annotate(
