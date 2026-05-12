@@ -1,6 +1,8 @@
 from decimal import Decimal
 from rest_framework import viewsets, mixins
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from utils.mixins import CompanyFilterMixin
 from utils.permissions import IsBossOrManager
@@ -9,17 +11,12 @@ from .serializers import ExpenseSerializer, ExpenseCreateSerializer
 
 
 class ExpenseViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
-                     mixins.ListModelMixin, viewsets.GenericViewSet):
-    """
-    GET  /api/v1/expenses/
-    POST /api/v1/expenses/   — manual entries only (auto ones created by signals)
-    """
-    queryset = Expense.objects.order_by('-expense_date')
-    filterset_fields = ['category', 'source']
-    http_method_names = ['get', 'post', 'head', 'options']
+                     mixins.UpdateModelMixin, mixins.ListModelMixin,
+                     viewsets.GenericViewSet):
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_permissions(self):
-        if self.action == 'create':
+        if self.action in ('create', 'partial_update', 'update'):
             return [IsBossOrManager()]
         return [IsAuthenticated()]
 
