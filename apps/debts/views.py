@@ -19,7 +19,7 @@ class DebtViewSet(
 ):
     queryset = Debt.objects.select_related('student').prefetch_related(
         'student__group_memberships__group'
-    ).order_by('created_at')
+    ).order_by('due_date')
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
  
     def get_permissions(self):
