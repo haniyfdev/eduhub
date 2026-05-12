@@ -6,16 +6,21 @@ from .models import Payment
 
 class PaymentSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
+    student_phone = serializers.CharField(source='student.phone', read_only=True)
     course_name = serializers.CharField(source='course.name', read_only=True)
     group_display = serializers.CharField(source='group.display_name', read_only=True)
 
     class Meta:
         model = Payment
         fields = (
-            'id', 'company', 'student', 'student_name', 'group', 'course', 'course_name',
-            'discount', 'amount', 'payment_type', 'note', 'paid_at', 'group_display'
+            'id', 'company', 'student', 'student_name', 'student_phone',
+            'group', 'group_display', 'course', 'course_name',
+            'discount', 'amount', 'payment_type', 'note', 'paid_at',
         )
-        read_only_fields = ('id', 'company', 'amount', 'paid_at')
+        read_only_fields = (
+            'id', 'company', 'student', 'group', 'course',
+            'discount', 'amount', 'payment_type', 'note', 'paid_at',
+        )
 
     def get_student_name(self, obj):
         return f"{obj.student.first_name} {obj.student.last_name}"
