@@ -10,7 +10,7 @@ from .serializers import CourseSerializer, CourseCreateSerializer, CourseUpdateS
 
 
 class CourseViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
-    queryset = Course.objects.prefetch_related('teachers__user').order_by('name')
+    queryset = Course.objects.prefetch_related('teachers__user').order_by('status', '-created_at')
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['status']
     search_fields = ['name']

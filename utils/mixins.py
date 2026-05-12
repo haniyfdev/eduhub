@@ -13,7 +13,11 @@ class ArchiveMixin:
     def archive(self, request, pk=None):
         instance = self.get_object()
         instance.status = 'archived'
-        instance.archived_at = timezone.now()
+        # archived_at yoki closed_at — qaysi field bo'lsa
+        if hasattr(instance, 'archived_at'):
+            instance.archived_at = timezone.now()
+        if hasattr(instance, 'closed_at'):
+            instance.closed_at = timezone.now()
         instance.save()
         return Response({'status': 'archived'})
 
