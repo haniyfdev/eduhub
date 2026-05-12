@@ -19,6 +19,7 @@ class CourseSerializer(serializers.ModelSerializer):
             for t in obj.teachers.all()
         ]
 
+# ------------------
 
 class CourseCreateSerializer(serializers.ModelSerializer):
     teacher_ids = serializers.ListField(
@@ -37,3 +38,24 @@ class CourseCreateSerializer(serializers.ModelSerializer):
             from apps.teachers.models import Teacher
             course.teachers.set(Teacher.objects.filter(id__in=teacher_ids))
         return course
+
+# ------------------
+
+class CourseUpdateSerializer(serializers.ModelSerializer):
+    teacher_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, write_only=True
+    )
+
+    class Meta:
+        model = Course
+        fields = ('id', 'teacher_ids', 'name', 'description', 'price',
+                  'duration_months', 'duration_hours', 'status')
+        read_only_fields = ('id',)
+
+    def update(self, instance, validated_data):
+        teacher_ids = validated_data.pop('teacher_ids', None)
+        instance = super().update(instance, validated_data)
+        if teacher_ids is not None:
+            from apps.teachers.models import Teacher
+            instance.teachers.set(Teacher.objects.filter(id__in=teacher_ids))
+        return instance
