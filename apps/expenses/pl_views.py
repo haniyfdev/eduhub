@@ -64,6 +64,11 @@ class ProfitLossView(APIView):
 
             return Response({
                 'period': period,
+                'income': total_income,      # total_income -> income
+                'expenses': total_expense,   # total_expense -> expenses
+                'net_profit': total_income - total_expense, # profit -> net_profit
+                
+                # Eski nomlarni ham qoldiramiz (xavfsizlik uchun)
                 'total_income': total_income,
                 'total_expense': total_expense,
                 'profit': total_income - total_expense
