@@ -25,58 +25,52 @@ def _parse_month(month_str):
     except (ValueError, AttributeError):
         return None
 
-
 class ProfitLossView(APIView):
-    """GET /api/v1/profit-loss/?month=2026-05"""
     permission_classes = [IsSuperAdminOrBossOrManager]
 
     def get(self, request):
-        month_str = request.query_params.get('month')
-        year_str = request.query_params.get('year')
+        try:
+            month_str = request.query_params.get('month')
+            year_str = request.query_params.get('year')
+            date_from_str = request.query_params.get('date_from')
+            date_to_str = request.query_params.get('date_to')
 
-        company = request.user.company if request.user.role != 'superadmin' else None
+            company = request.user.company if request.user.role != 'superadmin' else None
+            company_filter = {} if company is None else {'company': company}
 
-        company_filter = {} if company is None else {'company': company}
+            # 1. Filtrlash qismi
+            if date_from_str and date_to_str:
+                from datetime import date
+                payments_qs = Payment.objects.filter(**company_filter, paid_at__date__range=[date_from_str, date_to_str])
+                expenses_qs = Expense.objects.filter(**company_filter, expense_date__range=[date_from_str, date_to_str])
+                period = f"{date_from_str} - {date_to_str}"
+            elif month_str:
+                parsed = _parse_month(month_str)
+                if not parsed: return Response({'detail': 'Format: YYYY-MM'}, status=400)
+                year, mon = parsed
+                payments_qs = Payment.objects.filter(**company_filter, paid_at__year=year, paid_at__month=mon)
+                expenses_qs = Expense.objects.filter(**company_filter, expense_date__year=year, expense_date__month=mon)
+                period = month_str
+            elif year_str:
+                payments_qs = Payment.objects.filter(**company_filter, paid_at__year=year_str)
+                expenses_qs = Expense.objects.filter(**company_filter, expense_date__year=year_str)
+                period = year_str
+            else:
+                return Response({'detail': 'Parametrlar yetishmayapti'}, status=400)
 
-        date_from_str = request.query_params.get('date_from')
-        date_to_str   = request.query_params.get('date_to')
+            # 2. Hisoblash qismi (Sizda mana shu joyi yo'q edi)
+            total_income = payments_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            total_expense = expenses_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
-        if date_from_str and date_to_str:
-            from datetime import date
-            try:
-                date_from = date.fromisoformat(date_from_str)
-                date_to   = date.fromisoformat(date_to_str)
-            except ValueError:
-                return Response({'detail': 'Use YYYY-MM-DD format.'}, status=400)
-            payments_qs = Payment.objects.filter(
-                **company_filter, paid_at__date__gte=date_from, paid_at__date__lte=date_to
-            )
-            expenses_qs = Expense.objects.filter(
-                **company_filter, expense_date__gte=date_from, expense_date__lte=date_to
-            )
-            period = f"{date_from_str} — {date_to_str}"
-        elif month_str:
-            parsed = _parse_month(month_str)
-            if not parsed:
-                return Response({'detail': 'Invalid month format. Use YYYY-MM.'}, status=400)
-            year, mon = parsed
-            payments_qs = Payment.objects.filter(
-                **company_filter, paid_at__year=year, paid_at__month=mon
-            )
-            expenses_qs = Expense.objects.filter(
-                **company_filter, expense_date__year=year, expense_date__month=mon
-            )
-            period = month_str
-        elif year_str:
-            try:
-                year = int(year_str)
-            except ValueError:
-                return Response({'detail': 'Invalid year.'}, status=400)
-            payments_qs = Payment.objects.filter(**company_filter, paid_at__year=year)
-            expenses_qs = Expense.objects.filter(**company_filter, expense_date__year=year)
-            period = year_str
-        else:
-            return Response({'detail': 'Provide ?month=YYYY-MM or ?year=YYYY or ?date_from&date_to.'}, status=400)
+            return Response({
+                'period': period,
+                'total_income': total_income,
+                'total_expense': total_expense,
+                'profit': total_income - total_expense
+            })
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
 
 
 class ProfitLossHistoryView(APIView):
