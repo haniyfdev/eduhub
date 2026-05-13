@@ -15,9 +15,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
 
 class ExpenseCreateSerializer(serializers.ModelSerializer):
+    description = serializers.CharField(required=False, allow_blank=True, default='')
+
     class Meta:
         model = Expense
         fields = ('id', 'category', 'amount', 'description', 'expense_date')
-        def validate_description(self, value):
-            return value or ''
         read_only_fields = ('id',)

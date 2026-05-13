@@ -37,7 +37,24 @@ class ProfitLossView(APIView):
 
         company_filter = {} if company is None else {'company': company}
 
-        if month_str:
+        date_from_str = request.query_params.get('date_from')
+        date_to_str   = request.query_params.get('date_to')
+
+        if date_from_str and date_to_str:
+            from datetime import date
+            try:
+                date_from = date.fromisoformat(date_from_str)
+                date_to   = date.fromisoformat(date_to_str)
+            except ValueError:
+                return Response({'detail': 'Use YYYY-MM-DD format.'}, status=400)
+            payments_qs = Payment.objects.filter(
+                **company_filter, paid_at__date__gte=date_from, paid_at__date__lte=date_to
+            )
+            expenses_qs = Expense.objects.filter(
+                **company_filter, expense_date__gte=date_from, expense_date__lte=date_to
+            )
+            period = f"{date_from_str} — {date_to_str}"
+        elif month_str:
             parsed = _parse_month(month_str)
             if not parsed:
                 return Response({'detail': 'Invalid month format. Use YYYY-MM.'}, status=400)
@@ -58,42 +75,7 @@ class ProfitLossView(APIView):
             expenses_qs = Expense.objects.filter(**company_filter, expense_date__year=year)
             period = year_str
         else:
-            return Response({'detail': 'Provide ?month=YYYY-MM or ?year=YYYY.'}, status=400)
-
-        income = payments_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
-
-        expense_data = expenses_qs.values('category').annotate(total=Sum('amount'))
-        expense_map = {row['category']: row['total'] for row in expense_data}
-
-        # Rule: all 8 categories always present, even at 0
-        breakdown = {cat: expense_map.get(cat, Decimal('0')) for cat in ALL_EXPENSE_CATEGORIES}
-        total_expenses = sum(breakdown.values())
-        profit = income - total_expenses
-        margin = (profit / income * 100) if income > 0 else Decimal('0')
-
-        # Income breakdown by course
-        income_by_course = (
-            payments_qs.values('course__name')
-            .annotate(amount=Sum('amount'))
-            .order_by('-amount')
-        )
-
-        return Response({
-            'period': period,
-            'income': {
-                'total': income,
-                'breakdown': [
-                    {'course': row['course__name'], 'amount': row['amount']}
-                    for row in income_by_course
-                ],
-            },
-            'expenses': {
-                'total': total_expenses,
-                'breakdown': breakdown,
-            },
-            'profit': profit,
-            'margin': f"{margin:.1f}%",
-        })
+            return Response({'detail': 'Provide ?month=YYYY-MM or ?year=YYYY or ?date_from&date_to.'}, status=400)
 
 
 class ProfitLossHistoryView(APIView):
