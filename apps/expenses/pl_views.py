@@ -107,37 +107,45 @@ class ProfitLossHistoryView(APIView):
             })
         return Response(results)
 
+import traceback
 
-class ProfitLossTeachersView(APIView):
-    """GET /api/v1/profit-loss/teachers/ — per-teacher revenue vs salary."""
-    permission_classes = [IsSuperAdminOrBossOrManager]
+def get(self, request):
+    try:
+                
+        class ProfitLossTeachersView(APIView):
+            """GET /api/v1/profit-loss/teachers/ — per-teacher revenue vs salary."""
+            permission_classes = [IsSuperAdminOrBossOrManager]
 
-    def get(self, request):
-        month_str = request.query_params.get('month')
-        parsed = _parse_month(month_str) if month_str else None
-        company = request.user.company if request.user.role != 'superadmin' else None
-        company_filter = {} if company is None else {'company': company}
+            def get(self, request):
+                month_str = request.query_params.get('month')
+                parsed = _parse_month(month_str) if month_str else None
+                company = request.user.company if request.user.role != 'superadmin' else None
+                company_filter = {} if company is None else {'company': company}
 
-        teachers = Teacher.objects.filter(**company_filter, status='active').select_related('user')
-        result = []
-        for teacher in teachers:
-            if parsed:
-                year, mon = parsed
-                revenue = Payment.objects.filter(
-                    **company_filter, group__teacher=teacher,
-                    paid_at__year=year, paid_at__month=mon,
-                ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-                salary_qs = TeacherSalary.objects.filter(
-                    teacher=teacher, month__year=year, month__month=mon
-                ).first()
-            else:
-                revenue = Decimal('0')
-                salary_qs = None
+                teachers = Teacher.objects.filter(**company_filter, status='active').select_related('user')
+                result = []
+                for teacher in teachers:
+                    if parsed:
+                        year, mon = parsed
+                        revenue = Payment.objects.filter(
+                            **company_filter, group__teacher=teacher,
+                            paid_at__year=year, paid_at__month=mon,
+                        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                        salary_qs = TeacherSalary.objects.filter(
+                            teacher=teacher, month__year=year, month__month=mon
+                        ).first()
+                    else:
+                        revenue = Decimal('0')
+                        salary_qs = None
 
-            result.append({
-                'teacher_id': str(teacher.id),
-                'teacher_name': teacher.user.get_full_name(),
-                'revenue': revenue,
-                'salary': salary_qs.total_amount if salary_qs else Decimal('0'),
-            })
-        return Response(result)
+                    result.append({
+                        'teacher_id': str(teacher.id),
+                        'teacher_name': teacher.user.get_full_name(),
+                        'revenue': revenue,
+                        'salary': salary_qs.total_amount if salary_qs else Decimal('0'),
+                    })
+                return Response(result)
+
+    
+    except Exception as e:
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
