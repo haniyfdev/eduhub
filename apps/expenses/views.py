@@ -26,19 +26,39 @@ class ExpenseViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         return ExpenseSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        month = self.request.query_params.get('month')
-        if month:
-            try:
-                year, mon = month.split('-')
-                qs = qs.filter(expense_date__year=int(year), expense_date__month=int(mon))
-            except ValueError:
-                pass
-        return qs
+            # Asosiy queryset (CompanyFilterMixin orqali faqat o'z kompaniyasini ko'radi)
+            qs = Expense.objects.filter(company=self.request.user.company) if self.request.user.role != 'superadmin' else Expense.objects.all()
+            
+            month = self.request.query_params.get('month')
+            year_param = self.request.query_params.get('year')
+            date_from = self.request.query_params.get('date_from')
+            date_to = self.request.query_params.get('date_to')
+            source = self.request.query_params.get('source')
 
-    def perform_create(self, serializer):
-        serializer.save(
-            company=self.request.user.company,
-            source='manual',
-            created_by=self.request.user,
-        )
+            # 1. Source bo'yicha filtr (manual/automatic)
+            if source:
+                qs = qs.filter(source=source)
+
+            # 2. Oy bo'yicha filtr (YYYY-MM)
+            if month:
+                try:
+                    year, mon = month.split('-')
+                    qs = qs.filter(expense_date__year=int(year), expense_date__month=int(mon))
+                except (ValueError, AttributeError):
+                    pass
+            
+            # 3. Yil bo'yicha filtr (YYYY)
+            elif year_param:
+                try:
+                    qs = qs.filter(expense_date__year=int(year_param))
+                except ValueError:
+                    pass
+
+            # 4. Davr bo'yicha filtr (Date Range)
+            elif date_from and date_to:
+                try:
+                    qs = qs.filter(expense_date__range=[date_from, date_to])
+                except ValueError:
+                    pass
+
+            return qs.order_by('-expense_date')
