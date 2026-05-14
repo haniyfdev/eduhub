@@ -72,6 +72,11 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
         GroupStudent.objects.create(group=group, student=student, joined_at=timezone.now())
 
+        # Auto-promote pending → trial when added to a group
+        if student.status == 'pending':
+            student.status = 'trial'
+            student.save(update_fields=['status'])
+
         return Response({'status': 'student added'}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='remove-student')

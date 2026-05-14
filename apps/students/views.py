@@ -43,7 +43,7 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     
     def get_queryset(self):
         from django.db.models import Q
-        qs = super().get_queryset()
+        qs = super().get_queryset().filter(status__in=['active', 'archived'])
         search = self.request.query_params.get('search', '')
         if search:
             q = (
