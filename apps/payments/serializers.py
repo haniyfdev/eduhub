@@ -82,6 +82,16 @@ class PaymentCreateSerializer(serializers.Serializer):
 
         data['final_amount'] = final_amount
         data['discount'] = discount
+
+        # Cap: payment cannot exceed current outstanding debt
+        try:
+            from apps.debts.models import Debt as DebtModel
+            debt_obj = DebtModel.objects.get(student=data['student'])
+            if final_amount > debt_obj.amount:
+                raise serializers.ValidationError({'amount': "To'lov summasi qarzdan oshib ketdi"})
+        except DebtModel.DoesNotExist:
+            pass
+
         return data
 
     def create(self, validated_data):
