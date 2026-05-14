@@ -15,6 +15,7 @@ class Student(BaseModel):
         ('active', 'Active'),
         ('trial', 'Trial'),
         ('archived', 'Archived'),
+        ('ignored', 'Ignored'),
     ]
 
     company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='students')

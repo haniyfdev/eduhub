@@ -18,14 +18,22 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
     search_fields = ['first_name', 'last_name', 'phone']
 
     def get_queryset(self):
-        qs = Lead.objects.select_related('course').prefetch_related('group_memberships__group')
+        from django.db.models import Case, When, IntegerField, Value
+        qs = Lead.objects.select_related('course').prefetch_related('group_memberships__group').annotate(
+            status_order=Case(
+                When(status__in=['pending', 'trial'], then=Value(1)),
+                When(status='ignored', then=Value(2)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        )
         user = self.request.user
         if user.role == 'superadmin':
-            return qs.order_by('-created_at')
-        return qs.filter(company_id=user.company_id).order_by('-created_at')
+            return qs.order_by('status_order', 'created_at')
+        return qs.filter(company_id=user.company_id).order_by('status_order', 'created_at')
 
     def get_permissions(self):
-        if self.action in ('promote', 'demote', 'partial_update', 'update', 'create'):
+        if self.action in ('promote', 'demote', 'ignore', 'partial_update', 'update', 'create'):
             return [IsBossOrManager()]
         return [IsAuthenticated()]
 
@@ -49,6 +57,21 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Cannot promote from current status.'}, status=status.HTTP_400_BAD_REQUEST)
         lead.save(update_fields=['status'])
         return Response(LeadSerializer(lead).data)
+
+    @action(detail=True, methods=['post'])
+    def ignore(self, request, pk=None):
+        lead = self.get_object()
+        lead.status = 'ignored'
+        description = request.data.get('description', '')
+        if description:
+            from apps.notes.models import StudentNote
+            StudentNote.objects.create(
+                student=lead,
+                author=request.user,
+                note=f"Rad etish sababi: {description}"
+            )
+        lead.save(update_fields=['status'])
+        return Response({'status': 'ignored'})
 
     @action(detail=True, methods=['post'])
     def demote(self, request, pk=None):

@@ -4,7 +4,7 @@ from apps.students.models import Student
 
 class LeadManager(models.Manager):
     def get_queryset(self):
-        return super().get_queryset().filter(status__in=['pending', 'trial'])
+        return super().get_queryset().filter(status__in=['pending', 'trial', 'ignored'])
 
 
 class Lead(Student):
