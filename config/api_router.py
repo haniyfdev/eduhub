@@ -25,4 +25,6 @@ urlpatterns = [
     path('staff-kpi-rules/', include('apps.salaries.kpi_urls')),
     path('grades/', include('apps.grades.urls')),
     path('student-notes/', include('apps.notes.urls')),
+    path('leads/', include('apps.leads.urls')),
+    path('attendance/', include('apps.attendance.urls')),
 ]
