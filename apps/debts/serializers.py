@@ -22,10 +22,15 @@ class DebtSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'company', 'student', 'updated_at')
 
     def _membership(self, obj):
-        for m in obj.student.group_memberships.all():
-            if m.left_at is None:
-                return m
-        return None
+        """Return (membership, is_former). Active group if exists, else last historical."""
+        memberships = list(obj.student.group_memberships.all())
+        active = next((m for m in memberships if m.left_at is None), None)
+        if active:
+            return active, False
+        if memberships:
+            last = max(memberships, key=lambda m: m.joined_at)
+            return last, True
+        return None, False
 
     def get_student_name(self, obj):
         return f"{obj.student.first_name} {obj.student.last_name}"
@@ -37,19 +42,22 @@ class DebtSerializer(serializers.ModelSerializer):
         return obj.student.second_phone or ''
 
     def get_group_name(self, obj):
-        m = self._membership(obj)
-        return m.group.display_name if m else None
+        m, is_former = self._membership(obj)
+        if not m:
+            return None
+        name = f"{m.group.number}{m.group.gender_type}"
+        return f"{name} (sobiq)" if is_former else name
 
     def get_group_id(self, obj):
-        m = self._membership(obj)
+        m, _ = self._membership(obj)
         return str(m.group.id) if m else None
 
     def get_course_id(self, obj):
-        m = self._membership(obj)
+        m, _ = self._membership(obj)
         return str(m.group.course_id) if m else None
 
     def get_course_name(self, obj):
-        m = self._membership(obj)
+        m, _ = self._membership(obj)
         if m and m.group.course:
             return m.group.course.name
         return None

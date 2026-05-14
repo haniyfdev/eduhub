@@ -32,8 +32,8 @@ class PaymentCreateSerializer(serializers.Serializer):
     Business logic §1: validate ownership, apply discount, freeze amount, update debt, send SMS.
     """
     student_id = serializers.UUIDField()
-    group_id = serializers.UUIDField()
-    course_id = serializers.UUIDField()
+    group_id = serializers.UUIDField(required=False, allow_null=True)
+    course_id = serializers.UUIDField(required=False, allow_null=True)
     discount_id = serializers.UUIDField(required=False, allow_null=True)
     requested_amount = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=Decimal('0.01'))
     payment_type = serializers.ChoiceField(choices=['cash', 'card', 'transfer'])
@@ -53,15 +53,29 @@ class PaymentCreateSerializer(serializers.Serializer):
         except Student.DoesNotExist:
             raise serializers.ValidationError({'student_id': 'Student not found in this company.'})
 
-        try:
-            data['group'] = Group.objects.get(id=data['group_id'], company=company)
-        except Group.DoesNotExist:
-            raise serializers.ValidationError({'group_id': 'Group not found in this company.'})
+        # Step 2 — resolve group (provided or fall back to last group student was in)
+        if data.get('group_id'):
+            try:
+                data['group'] = Group.objects.get(id=data['group_id'], company=company)
+            except Group.DoesNotExist:
+                raise serializers.ValidationError({'group_id': 'Group not found in this company.'})
+        else:
+            from apps.groups.models import GroupStudent
+            last_gs = GroupStudent.objects.filter(
+                student=data['student']
+            ).select_related('group').order_by('-joined_at').first()
+            if not last_gs:
+                raise serializers.ValidationError({'group_id': 'No group history found for this student.'})
+            data['group'] = last_gs.group
 
-        try:
-            data['course'] = Course.objects.get(id=data['course_id'], company=company)
-        except Course.DoesNotExist:
-            raise serializers.ValidationError({'course_id': 'Course not found in this company.'})
+        # Step 3 — resolve course (provided or get from group)
+        if data.get('course_id'):
+            try:
+                data['course'] = Course.objects.get(id=data['course_id'], company=company)
+            except Course.DoesNotExist:
+                raise serializers.ValidationError({'course_id': 'Course not found in this company.'})
+        else:
+            data['course'] = data['group'].course
 
         # Step 2 — apply discount
         final_amount = data['requested_amount']

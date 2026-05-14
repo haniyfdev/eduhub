@@ -97,10 +97,11 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         membership.left_at = timezone.now()
         membership.save(update_fields=['left_at'])
 
-        # Guruhdan chiqarilgan o'quvchi pending ga qaytadi
+        # Removed from group → archived (stays in students list, not leads)
         student = membership.student
-        if student.status == 'active':
-            student.status = 'pending'
-            student.save(update_fields=['status'])
+        if student.status != 'archived':
+            student.status = 'archived'
+            student.archived_at = timezone.now()
+            student.save(update_fields=['status', 'archived_at'])
 
         return Response({'status': 'student removed'})
