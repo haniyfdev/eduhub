@@ -15,6 +15,7 @@ class Student(BaseModel):
         ('active', 'Active'),
         ('trial', 'Trial'),
         ('archived', 'Archived'),
+        ('frozen', 'Frozen'),
         ('ignored', 'Ignored'),
     ]
 

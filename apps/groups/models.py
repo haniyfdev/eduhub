@@ -18,7 +18,7 @@ class Group(BaseModel):
     schedule = models.CharField(max_length=200, null=True, blank=True)
     status = models.CharField(
         max_length=20,
-        choices=[('active', 'Active'), ('archived', 'Archived')],
+        choices=[('active', 'Active'), ('archived', 'Archived'), ('frozen', 'Frozen')],
         default='active',
     )
     created_at = models.DateTimeField(auto_now_add=True)

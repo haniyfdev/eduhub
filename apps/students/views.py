@@ -27,6 +27,7 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             When(status='active', then=1),
             When(status='trial', then=2),
             When(status='pending', then=3),
+            When(status='frozen', then=4),
             When(status='archived', then=99),
             default=5,
             output_field=IntegerField(),
@@ -43,7 +44,7 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     
     def get_queryset(self):
         from django.db.models import Q
-        qs = super().get_queryset().filter(status__in=['active', 'archived'])
+        qs = super().get_queryset().filter(status__in=['active', 'archived', 'frozen'])
         search = self.request.query_params.get('search', '')
         if search:
             q = (

@@ -18,6 +18,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     queryset = Group.objects.select_related('course', 'teacher__user').annotate(
         status_order=Case(
             When(status='active', then=1),
+            When(status='frozen', then=2),
             When(status='archived', then=99),
             default=5,
             output_field=IntegerField(),
@@ -105,3 +106,21 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             student.save(update_fields=['status', 'archived_at'])
 
         return Response({'status': 'student removed'})
+
+    @action(detail=True, methods=['post'])
+    def freeze(self, request, pk=None):
+        group = self.get_object()
+        if group.status != 'active':
+            return Response({'detail': 'Only active groups can be frozen.'}, status=status.HTTP_400_BAD_REQUEST)
+        group.status = 'frozen'
+        group.save(update_fields=['status'])
+        return Response({'status': 'frozen'})
+
+    @action(detail=True, methods=['post'])
+    def unfreeze(self, request, pk=None):
+        group = self.get_object()
+        if group.status != 'frozen':
+            return Response({'detail': 'Group is not frozen.'}, status=status.HTTP_400_BAD_REQUEST)
+        group.status = 'active'
+        group.save(update_fields=['status'])
+        return Response({'status': 'active'})

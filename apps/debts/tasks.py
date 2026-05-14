@@ -40,6 +40,8 @@ def assign_monthly_debts(company_id):
     ).select_related('student', 'group__course')
 
     for enrollment in active_enrollments:
+        if enrollment.student.status == 'frozen':
+            continue
         course_price = enrollment.group.course.price
 
         if billing_type == 'monthly':
