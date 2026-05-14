@@ -29,6 +29,10 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     filterset_fields = ['status', 'course', 'teacher']
     search_fields = ['number', 'gender_type', 'teacher__user__first_name', 'teacher__user__last_name']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.filter(status__in=['active', 'archived', 'frozen'])
+
     def get_permissions(self):
         return [IsAuthenticated()]
 
