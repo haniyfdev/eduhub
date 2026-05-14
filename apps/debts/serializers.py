@@ -6,6 +6,7 @@ class DebtSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     student_phone = serializers.SerializerMethodField()
     student_second_phone = serializers.SerializerMethodField()
+    student_status = serializers.CharField(source='student.status', read_only=True)
     group_name = serializers.SerializerMethodField()
     group_id = serializers.SerializerMethodField()
     course_id = serializers.SerializerMethodField()
@@ -15,7 +16,7 @@ class DebtSerializer(serializers.ModelSerializer):
         model = Debt
         fields = (
             'id', 'company', 'student', 'student_name',
-            'student_phone', 'student_second_phone',
+            'student_phone', 'student_second_phone', 'student_status',
             'group_name', 'group_id', 'course_id', 'course_name',
             'amount', 'due_date', 'status', 'updated_at',
         )

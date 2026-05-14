@@ -118,7 +118,14 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Only active groups can be frozen.'}, status=status.HTTP_400_BAD_REQUEST)
         group.status = 'frozen'
         group.save(update_fields=['status'])
-        return Response({'status': 'frozen'})
+        enrollments = GroupStudent.objects.filter(
+            group=group, left_at__isnull=True
+        ).select_related('student')
+        for gs in enrollments:
+            if gs.student.status == 'active':
+                gs.student.status = 'frozen'
+                gs.student.save(update_fields=['status'])
+        return Response({'status': 'frozen', 'frozen_students': enrollments.count()})
 
     @action(detail=True, methods=['post'])
     def unfreeze(self, request, pk=None):
@@ -127,4 +134,11 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Group is not frozen.'}, status=status.HTTP_400_BAD_REQUEST)
         group.status = 'active'
         group.save(update_fields=['status'])
+        enrollments = GroupStudent.objects.filter(
+            group=group, left_at__isnull=True
+        ).select_related('student')
+        for gs in enrollments:
+            if gs.student.status == 'frozen':
+                gs.student.status = 'active'
+                gs.student.save(update_fields=['status'])
         return Response({'status': 'active'})
