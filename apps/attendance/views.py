@@ -43,7 +43,6 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                 total=Count('id'),
                 present=Count('id', filter=Q(status='present')),
                 absent=Count('id', filter=Q(status='absent')),
-                late=Count('id', filter=Q(status='late')),
             )
             .filter(absent__gt=0)
             .order_by('-absent')
@@ -77,7 +76,6 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                 'total': total,
                 'present': present,
                 'absent': row['absent'],
-                'late': row['late'],
                 'attendance_pct': pct,
             })
 
