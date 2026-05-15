@@ -113,15 +113,31 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     def add_student(self, request, pk=None):
         """POST /api/v1/groups/{id}/add-student/  body: {student_id}"""
         from apps.students.models import Student
+        from apps.leads.models import Lead
         group = self.get_object()
         student_id = request.data.get('student_id')
         if not student_id:
             return Response({'detail': 'student_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            student = Student.objects.get(id=student_id, company=group.company)
-        except Student.DoesNotExist:
-            return Response({'detail': 'Student not found in this company.'}, status=status.HTTP_404_NOT_FOUND)
+        student = Student.objects.filter(id=student_id, company=group.company).first()
+
+        if student is None:
+            try:
+                lead = Lead.objects.get(id=student_id, company=group.company)
+            except Lead.DoesNotExist:
+                return Response({'detail': 'Student not found in this company.'}, status=status.HTTP_404_NOT_FOUND)
+            student = Student.objects.create(
+                company=lead.company,
+                first_name=lead.first_name,
+                last_name=lead.last_name,
+                phone=lead.phone,
+                second_phone=lead.second_phone,
+                course=lead.course,
+                birth_date=lead.birth_date,
+                referral_source=lead.referral_source,
+                status='trial',
+            )
+            lead.delete()
 
         # If already active in this group, no-op
         if GroupStudent.objects.filter(group=group, student=student, left_at__isnull=True).exists():
@@ -129,12 +145,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
         GroupStudent.objects.create(group=group, student=student, joined_at=timezone.now())
 
-        # Auto-promote pending → trial when added to a group
-        if student.status == 'pending':
-            student.status = 'trial'
-            student.save(update_fields=['status'])
-
-        return Response({'status': 'student added'}, status=status.HTTP_201_CREATED)
+        return Response({'status': 'student added', 'student_id': str(student.id)}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='remove-student')
     def remove_student(self, request, pk=None):
