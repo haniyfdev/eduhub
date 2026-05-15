@@ -4,6 +4,7 @@ from rest_framework.filters import SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import CompanyFilterMixin
 from utils.permissions import IsBossOrManager
@@ -19,7 +20,7 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         from django.db.models import Case, When, IntegerField, Value
-        qs = Lead.objects.select_related('course').prefetch_related('group_memberships__group').annotate(
+        qs = Lead.objects.select_related('course').annotate(
             status_order=Case(
                 When(status__in=['pending', 'trial'], then=Value(1)),
                 When(status='ignored', then=Value(2)),
@@ -47,41 +48,51 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def promote(self, request, pk=None):
-        """Promote: pending → trial, trial → active."""
+        """pending → trial (update); trial → active (create Student, delete Lead)."""
         lead = self.get_object()
+
         if lead.status == 'pending':
             lead.status = 'trial'
-        elif lead.status == 'trial':
-            lead.status = 'active'
-        else:
-            return Response({'detail': 'Cannot promote from current status.'}, status=status.HTTP_400_BAD_REQUEST)
-        lead.save(update_fields=['status'])
-        return Response(LeadSerializer(lead).data)
+            lead.save(update_fields=['status'])
+            return Response(LeadSerializer(lead).data)
+
+        if lead.status == 'trial':
+            from apps.students.models import Student
+            student = Student.objects.create(
+                company=lead.company,
+                first_name=lead.first_name,
+                last_name=lead.last_name,
+                phone=lead.phone,
+                second_phone=lead.second_phone,
+                course=lead.course,
+                birth_date=lead.birth_date,
+                referral_source=lead.referral_source,
+                status='active',
+                created_at=lead.created_at,
+            )
+            lead.delete()
+            from apps.students.serializers import StudentSerializer
+            return Response(StudentSerializer(student).data, status=status.HTTP_201_CREATED)
+
+        return Response({'detail': 'Cannot promote from current status.'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
     def ignore(self, request, pk=None):
         lead = self.get_object()
-        lead.status = 'ignored'
         description = request.data.get('description', '')
+        lead.status = 'ignored'
         if description:
-            from apps.notes.models import StudentNote
-            StudentNote.objects.create(
-                student=lead,
-                author=request.user,
-                note=f"Rad etish sababi: {description}"
-            )
-        lead.save(update_fields=['status'])
+            existing = lead.notes or ''
+            lead.notes = f"{existing}\n{description}".strip()
+        lead.save(update_fields=['status', 'notes'])
         return Response({'status': 'ignored'})
 
     @action(detail=True, methods=['post'])
     def demote(self, request, pk=None):
-        """Demote: trial → pending, active → trial."""
+        """trial → pending."""
         lead = self.get_object()
         if lead.status == 'trial':
             lead.status = 'pending'
-        elif lead.status == 'active':
-            lead.status = 'trial'
-        else:
-            return Response({'detail': 'Cannot demote from current status.'}, status=status.HTTP_400_BAD_REQUEST)
-        lead.save(update_fields=['status'])
-        return Response(LeadSerializer(lead).data)
+            lead.save(update_fields=['status'])
+            return Response(LeadSerializer(lead).data)
+        return Response({'detail': 'Cannot demote from current status.'}, status=status.HTTP_400_BAD_REQUEST)

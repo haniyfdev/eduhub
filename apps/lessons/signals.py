@@ -20,23 +20,3 @@ def create_teacher_work_log(sender, instance, created, **kwargs):
     )
 
 
-@receiver(post_save, sender='attendance.Attendance')
-def auto_promote_student(sender, instance, created, **kwargs):
-    """pending → trial on first present; trial → active on 2nd+ present."""
-    if not created or instance.status != 'present':
-        return
-
-    from apps.attendance.models import Attendance
-
-    student = instance.student
-    if student.status == 'pending':
-        student.status = 'trial'
-        student.save(update_fields=['status'])
-    elif student.status == 'trial':
-        present_count = Attendance.objects.filter(
-            student=student,
-            status='present',
-        ).count()
-        if present_count >= 2:
-            student.status = 'active'
-            student.save(update_fields=['status'])
