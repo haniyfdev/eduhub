@@ -21,7 +21,7 @@ class GroupSerializer(serializers.ModelSerializer):
         )
 
     def get_name(self, obj):
-        return f"{obj.number}{obj.gender_type}"
+        return f"{obj.number}{(obj.gender_type or '').upper()}"
 
     def get_course(self, obj):
         if obj.course_id:
@@ -60,8 +60,6 @@ class GroupCreateSerializer(serializers.ModelSerializer):
         )
 
     def validate_gender_type(self, value):
-        if not value:
-            raise serializers.ValidationError("gender_type is required.")
         return value
 
     def create(self, validated_data):

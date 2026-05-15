@@ -46,7 +46,7 @@ class DebtSerializer(serializers.ModelSerializer):
         m, is_former = self._membership(obj)
         if not m:
             return None
-        name = f"{m.group.number}{m.group.gender_type}"
+        name = f"{m.group.number}{(m.group.gender_type or '').upper()}"
         return f"{name} (sobiq)" if is_former else name
 
     def get_group_id(self, obj):

@@ -13,7 +13,7 @@ class Group(BaseModel):
     course = models.ForeignKey('courses.Course', on_delete=models.CASCADE, related_name='groups')
     teacher = models.ForeignKey('teachers.Teacher', on_delete=models.CASCADE, related_name='groups')
     number = models.PositiveIntegerField()
-    gender_type = models.CharField(max_length=1, choices=GENDER_TYPE_CHOICES)
+    gender_type = models.CharField(max_length=1, choices=GENDER_TYPE_CHOICES, null=True, blank=True)
     room = models.CharField(max_length=100, null=False, blank=False)
     schedule = models.CharField(max_length=200, null=True, blank=True)
     status = models.CharField(
@@ -29,7 +29,7 @@ class Group(BaseModel):
 
     @property
     def display_name(self):
-        return f"{self.number}{self.gender_type}"
+        return f"{self.number}{(self.gender_type or '').upper()}"
 
     def __str__(self):
         return self.display_name
