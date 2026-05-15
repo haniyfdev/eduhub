@@ -41,7 +41,7 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
             )
             .annotate(
                 total=Count('id'),
-                present=Count('id', filter=Q(status='present')),
+                present=Count('id', filter=Q(status__in=['present', 'late'])),
                 absent=Count('id', filter=Q(status='absent')),
             )
             .filter(absent__gt=0)
