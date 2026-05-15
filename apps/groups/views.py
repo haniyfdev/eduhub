@@ -163,6 +163,29 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
         return Response({'status': 'student removed'})
 
+    @action(detail=True, methods=['post'], url_path='transfer-student')
+    def transfer_student(self, request, pk=None):
+        """POST /api/v1/groups/{id}/transfer-student/  body: {student_id, new_group_id}"""
+        student_id = request.data.get('student_id')
+        new_group_id = request.data.get('new_group_id')
+        if not student_id or not new_group_id:
+            return Response({'detail': 'student_id and new_group_id are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            gs = GroupStudent.objects.get(group_id=pk, student_id=student_id, left_at__isnull=True)
+        except GroupStudent.DoesNotExist:
+            return Response({'detail': 'Active membership not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        gs.left_at = timezone.now()
+        gs.save(update_fields=['left_at'])
+
+        GroupStudent.objects.create(
+            group_id=new_group_id,
+            student_id=student_id,
+            joined_at=timezone.now(),
+        )
+        return Response({'status': 'transferred'})
+
     @action(detail=True, methods=['post'])
     def freeze(self, request, pk=None):
         group = self.get_object()
