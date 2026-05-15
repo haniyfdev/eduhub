@@ -12,6 +12,7 @@ class Student(BaseModel):
     ]
     STATUS_CHOICES = [
         ('active', 'Active'),
+        ('trial', 'Trial'),
         ('archived', 'Archived'),
         ('frozen', 'Frozen'),
     ]
@@ -27,6 +28,9 @@ class Student(BaseModel):
     birth_date = models.DateField(null=True, blank=True)
     referral_source = models.CharField(max_length=20, choices=REFERRAL_CHOICES, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    lead = models.OneToOneField(
+        'leads.Lead', on_delete=models.SET_NULL, null=True, blank=True, related_name='student'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     archived_at = models.DateTimeField(null=True, blank=True)
 

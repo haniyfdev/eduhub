@@ -126,6 +126,9 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 lead = Lead.objects.get(id=student_id, company=group.company)
             except Lead.DoesNotExist:
                 return Response({'detail': 'Student not found in this company.'}, status=status.HTTP_404_NOT_FOUND)
+            # Keep lead in leads table as trial; create linked trial student
+            lead.status = 'trial'
+            lead.save(update_fields=['status'])
             student = Student.objects.create(
                 company=lead.company,
                 first_name=lead.first_name,
@@ -136,8 +139,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 birth_date=lead.birth_date,
                 referral_source=lead.referral_source,
                 status='trial',
+                lead=lead,
             )
-            lead.delete()
 
         # If already active in this group, no-op
         if GroupStudent.objects.filter(group=group, student=student, left_at__isnull=True).exists():
