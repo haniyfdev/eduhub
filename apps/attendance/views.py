@@ -16,9 +16,12 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         qs = Attendance.objects.select_related('lesson__group__company', 'student')
-        if user.role == 'superadmin':
-            return qs
-        return qs.filter(lesson__group__company_id=user.company_id)
+        if user.role != 'superadmin':
+            qs = qs.filter(lesson__group__company_id=user.company_id)
+        student_id = self.request.query_params.get('student')
+        if student_id:
+            qs = qs.filter(student_id=student_id)
+        return qs
 
     @action(detail=False, methods=['get'], url_path='summary')
     def summary(self, request):
