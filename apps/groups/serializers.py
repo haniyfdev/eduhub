@@ -12,16 +12,25 @@ class GroupSerializer(serializers.ModelSerializer):
     course = serializers.SerializerMethodField()
     teacher = serializers.SerializerMethodField()
     students_count = serializers.SerializerMethodField()
+    start_time = serializers.SerializerMethodField()
+    end_time = serializers.SerializerMethodField()
 
     class Meta:
         model = Group
         fields = (
             'id', 'name', 'number', 'gender_type', 'course', 'teacher',
-            'students_count', 'schedule', 'room', 'status', 'created_at', 'archived_at',
+            'students_count', 'schedule', 'room', 'start_time', 'end_time',
+            'status', 'created_at', 'archived_at',
         )
 
     def get_name(self, obj):
         return f"{obj.number}{(obj.gender_type or '').upper()}"
+
+    def get_start_time(self, obj):
+        return obj.start_time.strftime('%H:%M') if obj.start_time else None
+
+    def get_end_time(self, obj):
+        return obj.end_time.strftime('%H:%M') if obj.end_time else None
 
     def get_course(self, obj):
         if obj.course_id:
@@ -45,7 +54,7 @@ class GroupSerializer(serializers.ModelSerializer):
 class GroupCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Group
-        fields = ('id', 'gender_type', 'room', 'schedule')
+        fields = ('id', 'gender_type', 'room', 'schedule', 'start_time', 'end_time')
         read_only_fields = ('id',)
 
     def __init__(self, *args, **kwargs):

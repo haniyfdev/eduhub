@@ -41,8 +41,60 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             return GroupCreateSerializer
         return GroupSerializer
 
+    def _check_room_conflict(self, room, start_time, end_time, company_id, exclude_id=None):
+        if not start_time or not end_time:
+            return None
+        conflicts = Group.objects.filter(
+            company_id=company_id,
+            room=room,
+            status='active',
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+        if exclude_id:
+            conflicts = conflicts.exclude(id=exclude_id)
+        return conflicts.first()
+
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company)
+        from rest_framework.exceptions import ValidationError
+        company = self.request.user.company
+        data = serializer.validated_data
+        conflict = self._check_room_conflict(
+            room=data.get('room', ''),
+            start_time=data.get('start_time'),
+            end_time=data.get('end_time'),
+            company_id=company.id,
+        )
+        if conflict:
+            raise ValidationError({
+                'room': (
+                    f"Bu xona {conflict.start_time.strftime('%H:%M')}-"
+                    f"{conflict.end_time.strftime('%H:%M')} orasida band. "
+                    f"{conflict.display_name} guruhi o'qiyapti."
+                )
+            })
+        serializer.save(company=company)
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import ValidationError
+        instance = serializer.instance
+        data = serializer.validated_data
+        conflict = self._check_room_conflict(
+            room=data.get('room', instance.room),
+            start_time=data.get('start_time', instance.start_time),
+            end_time=data.get('end_time', instance.end_time),
+            company_id=instance.company_id,
+            exclude_id=instance.id,
+        )
+        if conflict:
+            raise ValidationError({
+                'room': (
+                    f"Bu xona {conflict.start_time.strftime('%H:%M')}-"
+                    f"{conflict.end_time.strftime('%H:%M')} orasida band. "
+                    f"{conflict.display_name} guruhi o'qiyapti."
+                )
+            })
+        serializer.save()
 
     def retrieve(self, request, *args, **kwargs):
         """Detail: include current student list."""
