@@ -23,17 +23,22 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'], url_path='summary')
     def summary(self, request):
         """
-        GET /api/v1/attendance/summary/
+        GET /api/v1/attendance/summary/?search=query
         Returns students sorted by most absences, with attendance %.
         Only students with at least one absence are included.
+        Filters by student name or group display name.
         """
         user = request.user
+        search = request.query_params.get('search', '').strip()
         company_filter = {} if user.role == 'superadmin' else {'lesson__group__company_id': user.company_id}
 
         rows = (
             Attendance.objects
             .filter(**company_filter)
-            .values('student__id', 'student__first_name', 'student__last_name', 'student__phone')
+            .values(
+                'student__id', 'student__first_name', 'student__last_name',
+                'student__phone', 'student__second_phone',
+            )
             .annotate(
                 total=Count('id'),
                 present=Count('id', filter=Q(status='present')),
@@ -66,6 +71,7 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                 'student_id': sid,
                 'student_name': f"{row['student__first_name']} {row['student__last_name']}",
                 'phone': row['student__phone'],
+                'second_phone': row['student__second_phone'] or None,
                 'group': group_map.get(sid, '—'),
                 'course': course_map.get(sid, '—'),
                 'total': total,
@@ -74,5 +80,13 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                 'late': row['late'],
                 'attendance_pct': pct,
             })
+
+        if search:
+            q = search.lower()
+            result = [
+                r for r in result
+                if q in r['student_name'].lower()
+                or q in r['group'].lower()
+            ]
 
         return Response(result)
