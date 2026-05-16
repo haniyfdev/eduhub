@@ -53,11 +53,16 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             if search.isdigit():
                 q |= Q(group_memberships__group__number=int(search))
             qs = qs.filter(q).distinct()
-        archived_month = self.request.query_params.get('archived_month', '')
-        if archived_month:
+        from_date = self.request.query_params.get('from_date', '')
+        to_date   = self.request.query_params.get('to_date', '')
+        if from_date:
             try:
-                year, mon = archived_month.split('-')
-                qs = qs.filter(archived_at__year=int(year), archived_at__month=int(mon))
+                qs = qs.filter(archived_at__date__gte=from_date)
+            except (ValueError, AttributeError):
+                pass
+        if to_date:
+            try:
+                qs = qs.filter(archived_at__date__lte=to_date)
             except (ValueError, AttributeError):
                 pass
         return qs

@@ -89,14 +89,53 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='conversion-stats')
     def conversion_stats(self, request):
-        """GET /api/v1/leads/conversion-stats/ — current lead counts by status."""
-        from django.db.models import Count
-        qs = self.get_queryset()
-        counts = {row['status']: row['count'] for row in qs.values('status').annotate(count=Count('id'))}
+        """GET /api/v1/leads/conversion-stats/?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD"""
+        from datetime import date as date_type
+        from apps.students.models import Student
+
+        today = date_type.today()
+        default_from = today.replace(day=1)
+
+        from_str = request.query_params.get('from_date', str(default_from))
+        to_str   = request.query_params.get('to_date',   str(today))
+        try:
+            from_date = date_type.fromisoformat(from_str)
+        except (ValueError, AttributeError):
+            from_date = default_from
+        try:
+            to_date = date_type.fromisoformat(to_str)
+        except (ValueError, AttributeError):
+            to_date = today
+
+        company = request.user.company if request.user.role != 'superadmin' else None
+        cf = {} if company is None else {'company': company}
+
+        base = self.get_queryset().filter(
+            created_at__date__gte=from_date,
+            created_at__date__lte=to_date,
+        )
+        total_leads   = base.count()
+        trial         = base.filter(status='trial').count()
+        ignored       = base.filter(status='ignored').count()
+        still_pending = base.filter(status='pending').count()
+
+        # Students created (activated) in range — best approximation for "converted"
+        converted = Student.objects.filter(
+            **cf, status='active',
+            created_at__date__gte=from_date,
+            created_at__date__lte=to_date,
+        ).count()
+
+        total_funnel = total_leads + converted
+        conversion_rate = round(converted / total_funnel * 100, 1) if total_funnel else 0
+
         return Response({
-            'pending': counts.get('pending', 0),
-            'trial': counts.get('trial', 0),
-            'ignored': counts.get('ignored', 0),
+            'total_leads':    total_leads,
+            'trial':          trial,
+            'converted':      converted,
+            'ignored':        ignored,
+            'still_pending':  still_pending,
+            'conversion_rate': conversion_rate,
         })
 
     @action(detail=True, methods=['post'])

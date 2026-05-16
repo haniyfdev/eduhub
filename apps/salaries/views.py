@@ -29,15 +29,31 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
     http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
+        from datetime import date as date_type
         qs = super().get_queryset()
-        month = self.request.query_params.get('month')
-        if month:
+
+        from_str = self.request.query_params.get('from_date')
+        to_str   = self.request.query_params.get('to_date')
+        month    = self.request.query_params.get('month')
+
+        if from_str or to_str:
+            try:
+                if from_str:
+                    fd = date_type.fromisoformat(from_str)
+                    qs = qs.filter(month__gte=fd.replace(day=1))
+                if to_str:
+                    td = date_type.fromisoformat(to_str)
+                    qs = qs.filter(month__lte=td.replace(day=1))
+            except (ValueError, AttributeError):
+                pass
+        elif month:
             try:
                 year, mon = month.split('-')
                 qs = qs.filter(month__year=int(year), month__month=int(mon))
             except ValueError:
                 pass
-        return qs
+
+        return qs.order_by('-total_amount')
 
     def get_permissions(self):
         return [IsAuthenticated()]
@@ -48,6 +64,44 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         salary.paid_at = timezone.now()
         salary.save(update_fields=['paid_at'])
         return Response(TeacherSalarySerializer(salary).data)
+
+    @action(detail=False, methods=['post'], url_path='calculate')
+    def calculate(self, request):
+        """POST /api/v1/teacher-salaries/calculate/?month=YYYY-MM
+        Calculate (create if missing) salaries for all active teachers this month."""
+        import datetime
+        from apps.salaries.logic import calculate_teacher_salary
+        from apps.teachers.models import Teacher as TeacherModel
+
+        month_str = request.query_params.get('month') or request.data.get('month')
+        company = request.user.company
+
+        if month_str:
+            try:
+                year, mon = month_str.split('-')
+                month = datetime.date(int(year), int(mon), 1)
+            except (ValueError, AttributeError):
+                return Response({'detail': 'Format: YYYY-MM'}, status=400)
+        else:
+            today = datetime.date.today()
+            month = today.replace(day=1)
+
+        teachers = TeacherModel.objects.filter(company=company, status='active')
+        created, skipped = [], []
+
+        for teacher in teachers:
+            name = teacher.user.get_full_name()
+            if TeacherSalary.objects.filter(teacher=teacher, month=month).exists():
+                skipped.append(name)
+            else:
+                calculate_teacher_salary(teacher, month)
+                created.append(name)
+
+        return Response({
+            'month':   month.strftime('%Y-%m'),
+            'created': created,
+            'skipped': skipped,
+        })
 
 
 class StaffSalaryViewSet(CompanyFilterMixin, mixins.CreateModelMixin,

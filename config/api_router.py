@@ -27,4 +27,5 @@ urlpatterns = [
     path('student-notes/', include('apps.notes.urls')),
     path('leads/', include('apps.leads.urls')),
     path('attendance/', include('apps.attendance.urls')),
+    path('rooms/', include('apps.groups.rooms_urls')),
 ]

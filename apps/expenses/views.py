@@ -31,8 +31,15 @@ class ExpenseViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
             
             month = self.request.query_params.get('month')
             year_param = self.request.query_params.get('year')
-            date_from = self.request.query_params.get('date_from')
-            date_to = self.request.query_params.get('date_to')
+            # accept both from_date/to_date (new standard) and date_from/date_to (legacy)
+            date_from = (
+                self.request.query_params.get('from_date') or
+                self.request.query_params.get('date_from')
+            )
+            date_to = (
+                self.request.query_params.get('to_date') or
+                self.request.query_params.get('date_to')
+            )
             source = self.request.query_params.get('source')
 
             # 1. Source bo'yicha filtr (manual/automatic)
