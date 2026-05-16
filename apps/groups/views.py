@@ -41,59 +41,69 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             return GroupCreateSerializer
         return GroupSerializer
 
-    def _check_room_conflict(self, room, start_time, end_time, company_id, exclude_id=None):
-        if not start_time or not end_time:
+    def _parse_days(self, schedule):
+        if not schedule:
+            return set()
+        return {d.strip() for d in schedule.split(' ')[0].split(',') if d.strip()}
+
+    def _get_conflicting_group(self, room, schedule, start_time, end_time, company_id, exclude_id=None):
+        if not room or not start_time or not end_time:
             return None
-        conflicts = Group.objects.filter(
+        new_days = self._parse_days(schedule)
+        candidates = Group.objects.filter(
             company_id=company_id,
             room=room,
-            status='active',
-            start_time__lt=end_time,
-            end_time__gt=start_time,
+            status__in=['active', 'frozen'],
         )
         if exclude_id:
-            conflicts = conflicts.exclude(id=exclude_id)
-        return conflicts.first()
+            candidates = candidates.exclude(id=exclude_id)
+        for group in candidates:
+            existing_days = self._parse_days(group.schedule)
+            # If days are known on both sides, require common days for a conflict
+            if new_days and existing_days and not (new_days & existing_days):
+                continue
+            if group.start_time and group.end_time:
+                if start_time < group.end_time and end_time > group.start_time:
+                    return group
+        return None
+
+    def _conflict_msg(self, conflict):
+        t = (
+            f"{conflict.start_time.strftime('%H:%M')}-{conflict.end_time.strftime('%H:%M')}"
+            if conflict.start_time and conflict.end_time else ''
+        )
+        days = conflict.schedule.split(' ')[0] if conflict.schedule else ''
+        return f"Bu xona {days} {t} da band. {conflict.display_name} guruhi o'qiyapti.".strip()
 
     def perform_create(self, serializer):
         from rest_framework.exceptions import ValidationError
         company = self.request.user.company
         data = serializer.validated_data
-        conflict = self._check_room_conflict(
+        conflict = self._get_conflicting_group(
             room=data.get('room', ''),
+            schedule=data.get('schedule', ''),
             start_time=data.get('start_time'),
             end_time=data.get('end_time'),
             company_id=company.id,
         )
         if conflict:
-            raise ValidationError({
-                'room': (
-                    f"Bu xona {conflict.start_time.strftime('%H:%M')}-"
-                    f"{conflict.end_time.strftime('%H:%M')} orasida band. "
-                    f"{conflict.display_name} guruhi o'qiyapti."
-                )
-            })
+            raise ValidationError({'room': self._conflict_msg(conflict)})
         serializer.save(company=company)
 
     def perform_update(self, serializer):
         from rest_framework.exceptions import ValidationError
         instance = serializer.instance
         data = serializer.validated_data
-        conflict = self._check_room_conflict(
+        conflict = self._get_conflicting_group(
             room=data.get('room', instance.room),
+            schedule=data.get('schedule', instance.schedule),
             start_time=data.get('start_time', instance.start_time),
             end_time=data.get('end_time', instance.end_time),
             company_id=instance.company_id,
             exclude_id=instance.id,
         )
         if conflict:
-            raise ValidationError({
-                'room': (
-                    f"Bu xona {conflict.start_time.strftime('%H:%M')}-"
-                    f"{conflict.end_time.strftime('%H:%M')} orasida band. "
-                    f"{conflict.display_name} guruhi o'qiyapti."
-                )
-            })
+            raise ValidationError({'room': self._conflict_msg(conflict)})
         serializer.save()
 
     def retrieve(self, request, *args, **kwargs):
