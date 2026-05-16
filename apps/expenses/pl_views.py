@@ -16,6 +16,12 @@ ALL_EXPENSE_CATEGORIES = [
     'discount', 'teacher_salary', 'staff_salary', 'other',
 ]
 
+EXPENSE_CATEGORY_LABELS = {
+    'rent': 'Ijara', 'utility': 'Kommunal', 'tax': 'Soliq',
+    'fine': 'Jarima', 'discount': 'Chegirma',
+    'teacher_salary': "O'q. maoshi", 'staff_salary': 'Xodim maoshi', 'other': 'Boshqa',
+}
+
 
 def _parse_month(month_str):
     """Parse '2026-05' → (2026, 5). Returns None if invalid."""
@@ -58,20 +64,25 @@ class ProfitLossView(APIView):
             else:
                 return Response({'detail': 'Parametrlar yetishmayapti'}, status=400)
 
-            # 2. Hisoblash qismi (Sizda mana shu joyi yo'q edi)
+            # 2. Hisoblash qismi
             total_income = payments_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
             total_expense = expenses_qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
+            expense_breakdown = {
+                cat: expenses_qs.filter(category=cat).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                for cat in ALL_EXPENSE_CATEGORIES
+            }
+
             return Response({
                 'period': period,
-                'income': total_income,      # total_income -> income
-                'expenses': total_expense,   # total_expense -> expenses
-                'net_profit': total_income - total_expense, # profit -> net_profit
-                
-                # Eski nomlarni ham qoldiramiz (xavfsizlik uchun)
+                'income': total_income,
+                'expenses': total_expense,
+                'net_profit': total_income - total_expense,
+                'expense_breakdown': expense_breakdown,
+                # backward compat
                 'total_income': total_income,
                 'total_expense': total_expense,
-                'profit': total_income - total_expense
+                'profit': total_income - total_expense,
             })
 
         except Exception as e:
@@ -91,7 +102,8 @@ class ProfitLossHistoryView(APIView):
         today = date.today()
         results = []
 
-        for i in range(11, -1, -1):
+        months_count = min(int(request.query_params.get('months', 12)), 24)
+        for i in range(months_count - 1, -1, -1):
             d = today - relativedelta(months=i)
             income = Payment.objects.filter(
                 **company_filter, paid_at__year=d.year, paid_at__month=d.month
@@ -145,3 +157,57 @@ class ProfitLossTeachersView(APIView):
         
         except Exception as e:
             return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+
+class IncomeByCourseView(APIView):
+    """GET /api/v1/profit-loss/income-by-course/?month=YYYY-MM"""
+    permission_classes = [IsSuperAdminOrBossOrManager]
+
+    def get(self, request):
+        month_str = request.query_params.get('month')
+        company = request.user.company if request.user.role != 'superadmin' else None
+        company_filter = {} if company is None else {'company': company}
+
+        qs = Payment.objects.filter(**company_filter)
+        if month_str:
+            parsed = _parse_month(month_str)
+            if parsed:
+                year, mon = parsed
+                qs = qs.filter(paid_at__year=year, paid_at__month=mon)
+
+        result = (
+            qs.values('course__name')
+            .annotate(total=Sum('amount'))
+            .order_by('-total')
+        )
+        return Response([
+            {'course': r['course__name'] or 'Nomsiz', 'amount': r['total']}
+            for r in result
+        ])
+
+
+class DebtForecastView(APIView):
+    """GET /api/v1/profit-loss/debt-forecast/"""
+    permission_classes = [IsSuperAdminOrBossOrManager]
+
+    def get(self, request):
+        from apps.debts.models import Debt
+        company = request.user.company if request.user.role != 'superadmin' else None
+        company_filter = {} if company is None else {'company': company}
+
+        qs = Debt.objects.filter(**company_filter).exclude(status='paid')
+        total = qs.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        return Response({
+            'total': total,
+            'breakdown': {
+                'unpaid': qs.filter(status='unpaid').aggregate(t=Sum('amount'))['t'] or Decimal('0'),
+                'overdue': qs.filter(status='overdue').aggregate(t=Sum('amount'))['t'] or Decimal('0'),
+                'partial': qs.filter(status='partial').aggregate(t=Sum('amount'))['t'] or Decimal('0'),
+            },
+            'count': {
+                'unpaid': qs.filter(status='unpaid').count(),
+                'overdue': qs.filter(status='overdue').count(),
+                'partial': qs.filter(status='partial').count(),
+            },
+        })

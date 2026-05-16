@@ -87,6 +87,18 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         lead.save(update_fields=['status', 'notes'])
         return Response({'status': 'ignored'})
 
+    @action(detail=False, methods=['get'], url_path='conversion-stats')
+    def conversion_stats(self, request):
+        """GET /api/v1/leads/conversion-stats/ — current lead counts by status."""
+        from django.db.models import Count
+        qs = self.get_queryset()
+        counts = {row['status']: row['count'] for row in qs.values('status').annotate(count=Count('id'))}
+        return Response({
+            'pending': counts.get('pending', 0),
+            'trial': counts.get('trial', 0),
+            'ignored': counts.get('ignored', 0),
+        })
+
     @action(detail=True, methods=['post'])
     def demote(self, request, pk=None):
         """trial → pending."""

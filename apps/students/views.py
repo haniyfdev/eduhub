@@ -53,6 +53,13 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             if search.isdigit():
                 q |= Q(group_memberships__group__number=int(search))
             qs = qs.filter(q).distinct()
+        archived_month = self.request.query_params.get('archived_month', '')
+        if archived_month:
+            try:
+                year, mon = archived_month.split('-')
+                qs = qs.filter(archived_at__year=int(year), archived_at__month=int(mon))
+            except (ValueError, AttributeError):
+                pass
         return qs
 
     def get_serializer_class(self):
