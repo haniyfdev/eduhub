@@ -27,7 +27,15 @@ class Student(BaseModel):
     )
     birth_date = models.DateField(null=True, blank=True)
     referral_source = models.CharField(max_length=20, choices=REFERRAL_CHOICES, null=True, blank=True)
+    ARCHIVE_REASON_CHOICES = [
+        ('graduated', 'Kursni bitirdi'),
+        ('dropped_out', 'Tashlab ketdi'),
+    ]
+
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    archive_reason = models.CharField(
+        max_length=20, choices=ARCHIVE_REASON_CHOICES, null=True, blank=True
+    )
     lead = models.OneToOneField(
         'leads.Lead', on_delete=models.SET_NULL, null=True, blank=True, related_name='student'
     )

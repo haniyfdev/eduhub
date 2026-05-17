@@ -34,7 +34,7 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
  
     filter_backends   = [DjangoFilterBackend]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
-    filterset_fields  = ['status', 'course', 'referral_source']
+    filterset_fields  = ['status', 'course', 'referral_source', 'archive_reason']
     search_fields     = ['first_name', 'last_name']
  
     def get_permissions(self):
@@ -80,10 +80,14 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
         student = self.get_object()
+        reason = request.data.get('reason')
+        if reason not in ['graduated', 'dropped_out']:
+            return Response({'error': "Sabab ko'rsatilishi shart"}, status=400)
         student.status = 'archived'
+        student.archive_reason = reason
         student.archived_at = timezone.now()
         student.save()
-        return Response({'status': 'archived'})
+        return Response({'status': 'archived', 'reason': reason})
  
     @action(detail=True, methods=['get'])
     def payments(self, request, pk=None):

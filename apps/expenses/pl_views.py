@@ -54,12 +54,13 @@ class ProfitLossView(APIView):
 
             total_income = payments_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            # Only PAID teacher salaries count as expenses
+            # Only PAID teacher salaries count as expenses (use paid_amount, filter by paid_at)
             teacher_sal = TeacherSalary.objects.filter(
                 **cf,
+                paid_amount__gt=0,
                 paid_at__date__gte=from_date,
                 paid_at__date__lte=to_date,
-            ).aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+            ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
 
             def _exp(cat):
                 return expenses_qs.filter(category=cat).aggregate(t=Sum('amount'))['t'] or Decimal('0')
@@ -134,8 +135,11 @@ class ProfitLossHistoryView(APIView):
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
             teacher_sal_m = TeacherSalary.objects.filter(
-                **cf, paid_at__date__gte=month_from, paid_at__date__lte=month_to,
-            ).aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+                **cf,
+                paid_amount__gt=0,
+                paid_at__date__gte=month_from,
+                paid_at__date__lte=month_to,
+            ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
 
             non_teacher_m = Expense.objects.filter(
                 **cf, expense_date__gte=month_from, expense_date__lte=month_to,

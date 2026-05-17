@@ -15,7 +15,7 @@ class StudentSerializer(serializers.ModelSerializer):
             'id', 'company', 'first_name', 'last_name', 'phone', 'second_phone',
             'birth_date', 'course', 'course_name', 'course_price',
             'current_group', 'current_group_id', 'last_group',
-            'referral_source', 'status', 'created_at', 'archived_at',
+            'referral_source', 'status', 'archive_reason', 'created_at', 'archived_at',
         )
         read_only_fields = ('id', 'company', 'created_at', 'archived_at')
  
