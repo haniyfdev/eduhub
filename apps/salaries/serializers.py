@@ -4,16 +4,19 @@ from .models import TeacherSalary, StaffSalary, TeacherWorkLog, StaffKpiRule
 
 class TeacherSalarySerializer(serializers.ModelSerializer):
     teacher_name    = serializers.CharField(source='teacher.user.get_full_name', read_only=True)
-    teacher_phone   = serializers.CharField(source='teacher.user.phone', read_only=True)
     teacher_subject = serializers.CharField(source='teacher.subject', read_only=True)
+    salary_type     = serializers.CharField(source='teacher.salary_type', read_only=True)
     students_count  = serializers.SerializerMethodField()
+    total_owed      = serializers.SerializerMethodField()
 
     class Meta:
         model = TeacherSalary
         fields = (
-            'id', 'company', 'teacher', 'teacher_name', 'teacher_phone', 'teacher_subject',
-            'students_count', 'month',
-            'base_amount', 'kpi_amount', 'total_amount', 'paid_at', 'note', 'created_at',
+            'id', 'company', 'teacher', 'teacher_name', 'teacher_subject',
+            'salary_type', 'students_count', 'month',
+            'base_amount', 'kpi_amount', 'total_amount',
+            'calculated_amount', 'paid_amount', 'carry_over', 'total_owed',
+            'status', 'is_paid', 'paid_at', 'note', 'created_at',
         )
         read_only_fields = ('id', 'company', 'created_at')
 
@@ -24,6 +27,9 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
             group__status='active',
             left_at__isnull=True,
         ).count()
+
+    def get_total_owed(self, obj):
+        return obj.calculated_amount + obj.carry_over
 
 
 class StaffSalarySerializer(serializers.ModelSerializer):

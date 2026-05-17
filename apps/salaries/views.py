@@ -63,9 +63,56 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
 
     @action(detail=True, methods=['post'], url_path='mark-paid')
     def mark_paid(self, request, pk=None):
+        """Legacy alias — delegates to pay() with full amount."""
         salary = self.get_object()
-        salary.paid_at = timezone.now()
-        salary.save(update_fields=['paid_at'])
+        total_owed = salary.calculated_amount + salary.carry_over
+        remaining  = total_owed - salary.paid_amount
+        request.data['amount'] = str(remaining) if remaining > 0 else str(total_owed)
+        return self.pay(request, pk=pk)
+
+    @action(detail=True, methods=['post'], url_path='pay')
+    def pay(self, request, pk=None):
+        """POST /api/v1/teacher-salaries/{id}/pay/  body: {amount}"""
+        from decimal import Decimal, InvalidOperation
+        from apps.expenses.models import Expense
+
+        salary = self.get_object()
+        try:
+            amount = Decimal(str(request.data.get('amount', 0)))
+        except (InvalidOperation, TypeError):
+            return Response({'error': "Noto'g'ri summa"}, status=400)
+
+        total_owed = salary.calculated_amount + salary.carry_over
+        remaining  = total_owed - salary.paid_amount
+
+        if amount <= 0:
+            return Response({"error": "Summa musbat bo'lishi kerak"}, status=400)
+        if amount > remaining:
+            return Response({"error": "Summa qarzdan oshib ketdi"}, status=400)
+
+        salary.paid_amount += amount
+
+        if salary.paid_amount >= total_owed:
+            salary.status    = 'paid'
+            salary.is_paid   = True
+            salary.paid_at   = timezone.now()
+            salary.carry_over = Decimal('0')
+        else:
+            salary.status = 'partial'
+
+        salary.save()
+
+        # Record the payment as an expense
+        teacher_name = salary.teacher.user.get_full_name()
+        Expense.objects.create(
+            company=salary.teacher.company,
+            category='teacher_salary',
+            source='auto',
+            amount=amount,
+            description=f"{teacher_name} — {salary.month.strftime('%B %Y')} maoshi",
+            expense_date=timezone.now().date(),
+        )
+
         return Response(TeacherSalarySerializer(salary).data)
 
     @action(detail=False, methods=['post'], url_path='calculate')
@@ -89,12 +136,15 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             today = datetime.date.today()
             month = today.replace(day=1)
 
-        teachers = TeacherModel.objects.filter(company=company, status='active')
+        teachers = TeacherModel.objects.filter(
+            company=company, status='active', groups__status='active',
+        ).distinct()
         created, skipped = [], []
 
         for teacher in teachers:
             name = teacher.user.get_full_name()
-            if TeacherSalary.objects.filter(teacher=teacher, month=month).exists():
+            existing = TeacherSalary.objects.filter(teacher=teacher, month=month).first()
+            if existing and existing.status == 'paid':
                 skipped.append(name)
             else:
                 calculate_teacher_salary(teacher, month)

@@ -3,15 +3,26 @@ from apps.base import BaseModel
 
 
 class TeacherSalary(BaseModel):
-    company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='teacher_salaries')
-    teacher = models.ForeignKey('teachers.Teacher', on_delete=models.CASCADE, related_name='salaries')
-    month = models.DateField()
-    base_amount = models.DecimalField(max_digits=15, decimal_places=2)
-    kpi_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    total_amount = models.DecimalField(max_digits=15, decimal_places=2)
-    paid_at = models.DateTimeField(null=True, blank=True)
-    note = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    STATUS_CHOICES = [
+        ('unpaid',  'Unpaid'),
+        ('partial', 'Partial'),
+        ('paid',    'Paid'),
+    ]
+
+    company           = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='teacher_salaries')
+    teacher           = models.ForeignKey('teachers.Teacher', on_delete=models.CASCADE, related_name='salaries')
+    month             = models.DateField()
+    base_amount       = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    kpi_amount        = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    total_amount      = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    calculated_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    paid_amount       = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    carry_over        = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    status            = models.CharField(max_length=10, choices=STATUS_CHOICES, default='unpaid')
+    is_paid           = models.BooleanField(default=False)
+    paid_at           = models.DateTimeField(null=True, blank=True)
+    note              = models.TextField(null=True, blank=True)
+    created_at        = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'teacher_salaries'
