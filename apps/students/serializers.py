@@ -7,13 +7,14 @@ class StudentSerializer(serializers.ModelSerializer):
     course_price = serializers.SerializerMethodField()
     current_group    = serializers.SerializerMethodField()
     current_group_id = serializers.SerializerMethodField()
- 
+    last_group       = serializers.SerializerMethodField()
+
     class Meta:
         model = Student
         fields = (
             'id', 'company', 'first_name', 'last_name', 'phone', 'second_phone',
             'birth_date', 'course', 'course_name', 'course_price',
-            'current_group', 'current_group_id',
+            'current_group', 'current_group_id', 'last_group',
             'referral_source', 'status', 'created_at', 'archived_at',
         )
         read_only_fields = ('id', 'company', 'created_at', 'archived_at')
@@ -28,7 +29,14 @@ class StudentSerializer(serializers.ModelSerializer):
     def get_current_group_id(self, obj):
         m = self._active_membership(obj)
         return str(m.group.id) if m else None
- 
+
+    def get_last_group(self, obj):
+        from apps.groups.models import GroupStudent
+        gs = GroupStudent.objects.filter(student=obj).select_related('group').order_by('-joined_at').first()
+        if gs:
+            return f"{gs.group.number}{(gs.group.gender_type or '').upper()}"
+        return '—'
+
     def get_course_price(self, obj):
         try:
             return float(obj.course.price) if obj.course and obj.course.price else None

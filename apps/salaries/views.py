@@ -53,6 +53,9 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             except ValueError:
                 pass
 
+        # Only show salaries for active teachers who have at least one active group
+        qs = qs.filter(teacher__status='active', teacher__groups__status='active').distinct()
+
         return qs.order_by('-total_amount')
 
     def get_permissions(self):

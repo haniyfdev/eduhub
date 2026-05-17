@@ -117,7 +117,6 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         total_leads   = base.count()
         trial         = base.filter(status='trial').count()
         ignored       = base.filter(status='ignored').count()
-        still_pending = base.filter(status='pending').count()
 
         # Students created (activated) in range — best approximation for "converted"
         converted = Student.objects.filter(
@@ -126,16 +125,11 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
             created_at__date__lte=to_date,
         ).count()
 
-        total_funnel = total_leads + converted
-        conversion_rate = round(converted / total_funnel * 100, 1) if total_funnel else 0
-
         return Response({
-            'total_leads':    total_leads,
-            'trial':          trial,
-            'converted':      converted,
-            'ignored':        ignored,
-            'still_pending':  still_pending,
-            'conversion_rate': conversion_rate,
+            'total':   total_leads,
+            'trial':   trial,
+            'active':  converted,
+            'ignored': ignored,
         })
 
     @action(detail=True, methods=['post'])

@@ -11,30 +11,37 @@ class RoomsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        company = request.user.company if request.user.role != 'superadmin' else None
-        cf = {} if company is None else {'company': company}
+        user = request.user
+        if user.role == 'superadmin':
+            groups = Group.objects.filter(status='active')
+        else:
+            groups = Group.objects.filter(
+                company_id=user.company_id,
+                status__in=['active', 'frozen'],
+            )
 
-        groups = (
-            Group.objects
-            .filter(**cf, status__in=['active', 'frozen'])
-            .select_related('course', 'teacher__user')
-            .prefetch_related('memberships')
-            .order_by('room', 'start_time')
-        )
+        groups = groups.select_related('course', 'teacher__user').order_by('room', 'start_time')
 
-        by_room: dict = {}
+        rooms: dict = {}
         for g in groups:
-            room = (g.room or 'Nomsiz xona').strip()
-            if room not in by_room:
-                by_room[room] = []
+            room = (g.room or 'Xona belgilanmagan').strip()
+            if room not in rooms:
+                rooms[room] = []
 
-            raw_days = g.schedule.split(' ')[0] if g.schedule else ''
-            days = [d.strip() for d in raw_days.split(',') if d.strip()]
+            days = []
+            if g.schedule:
+                days_part = g.schedule.split(' ')[0]
+                days = [d.strip() for d in days_part.split(',') if d.strip()]
 
-            by_room[room].append({
+            teacher_name = '—'
+            if g.teacher and g.teacher.user:
+                teacher_name = f"{g.teacher.user.first_name} {g.teacher.user.last_name}".strip() or '—'
+
+            rooms[room].append({
                 'id':             str(g.id),
-                'group_name':     g.display_name,
-                'course':         g.course.name if g.course else None,
+                'name':           f"{g.number}{(g.gender_type or '').upper()}",
+                'course':         g.course.name if g.course else '—',
+                'teacher':        teacher_name,
                 'days':           days,
                 'start_time':     g.start_time.strftime('%H:%M') if g.start_time else None,
                 'end_time':       g.end_time.strftime('%H:%M') if g.end_time else None,
@@ -44,5 +51,5 @@ class RoomsView(APIView):
 
         return Response([
             {'room': room, 'groups': grps}
-            for room, grps in sorted(by_room.items())
+            for room, grps in sorted(rooms.items())
         ])
