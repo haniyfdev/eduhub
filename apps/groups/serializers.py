@@ -48,7 +48,10 @@ class GroupSerializer(serializers.ModelSerializer):
         return None
 
     def get_students_count(self, obj):
-        return obj.memberships.filter(left_at__isnull=True).count()
+        return obj.memberships.filter(
+            left_at__isnull=True,
+            student__status__in=['active', 'trial', 'frozen'],
+        ).count()
 
 
 class GroupCreateSerializer(serializers.ModelSerializer):

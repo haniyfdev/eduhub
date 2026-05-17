@@ -17,6 +17,9 @@ def create_debt_on_enrollment(sender, instance, created, **kwargs):
         return
 
     student = instance.student
+    if student.status != 'active':
+        return  # trial/pending students get no debt on enrollment
+
     group = instance.group
 
     Debt.objects.get_or_create(

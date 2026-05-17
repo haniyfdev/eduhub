@@ -112,7 +112,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         group = self.get_object()
         data = GroupSerializer(group).data
         active_members = GroupStudent.objects.filter(
-            group=group, left_at__isnull=True
+            group=group, left_at__isnull=True,
+            student__status__in=['active', 'trial', 'frozen'],
         ).select_related('student')
         data['students'] = StudentSerializer(
             [m.student for m in active_members], many=True
