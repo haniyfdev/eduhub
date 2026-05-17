@@ -89,48 +89,76 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='conversion-stats')
     def conversion_stats(self, request):
-        """GET /api/v1/leads/conversion-stats/?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD"""
-        from datetime import date as date_type
+        """GET /api/v1/leads/conversion-stats/ — current pipeline snapshot."""
         from apps.students.models import Student
-
-        today = date_type.today()
-        default_from = today.replace(day=1)
-
-        from_str = request.query_params.get('from_date', str(default_from))
-        to_str   = request.query_params.get('to_date',   str(today))
-        try:
-            from_date = date_type.fromisoformat(from_str)
-        except (ValueError, AttributeError):
-            from_date = default_from
-        try:
-            to_date = date_type.fromisoformat(to_str)
-        except (ValueError, AttributeError):
-            to_date = today
 
         company = request.user.company if request.user.role != 'superadmin' else None
         cf = {} if company is None else {'company': company}
 
-        base = self.get_queryset().filter(
-            created_at__date__gte=from_date,
-            created_at__date__lte=to_date,
-        )
-        total_leads   = base.count()
-        trial         = base.filter(status='trial').count()
-        ignored       = base.filter(status='ignored').count()
+        total_leads   = Lead.objects.filter(**cf).count()
+        total_students = Student.objects.filter(**cf).count()
+        grand_total   = total_leads + total_students
 
-        # Students created (activated) in range — best approximation for "converted"
-        converted = Student.objects.filter(
-            **cf, status='active',
-            created_at__date__gte=from_date,
-            created_at__date__lte=to_date,
-        ).count()
+        active  = Student.objects.filter(**cf, status='active').count()
+        frozen  = Student.objects.filter(**cf, status='frozen').count()
+        pending = Lead.objects.filter(**cf, status='pending').count()
+        ignored = Lead.objects.filter(**cf, status='ignored').count()
+
+        def pct(n):
+            return round(n / grand_total * 100, 1) if grand_total > 0 else 0
 
         return Response({
-            'total':   total_leads,
-            'trial':   trial,
-            'active':  converted,
-            'ignored': ignored,
+            'grand_total': grand_total,
+            'active':  {'count': active,  'percent': pct(active)},
+            'pending': {'count': pending, 'percent': pct(pending)},
+            'frozen':  {'count': frozen,  'percent': pct(frozen)},
+            'ignored': {'count': ignored, 'percent': pct(ignored)},
         })
+
+    @action(detail=False, methods=['get'], url_path='referral-stats')
+    def referral_stats(self, request):
+        """GET /api/v1/leads/referral-stats/ — referral source breakdown across leads+students."""
+        from django.db.models import Count
+        from apps.students.models import Student
+
+        company = request.user.company if request.user.role != 'superadmin' else None
+        cf = {} if company is None else {'company': company}
+
+        lead_refs = (
+            Lead.objects.filter(**cf, referral_source__isnull=False)
+            .values('referral_source').annotate(count=Count('id'))
+        )
+        student_refs = (
+            Student.objects.filter(**cf, referral_source__isnull=False)
+            .values('referral_source').annotate(count=Count('id'))
+        )
+
+        refs: dict = {}
+        for item in list(lead_refs) + list(student_refs):
+            key = item['referral_source']
+            refs[key] = refs.get(key, 0) + item['count']
+
+        total = sum(refs.values())
+
+        LABELS = {
+            'banner':       'Banner',
+            'friend':       'Tanish orqali',
+            'parent':       'Ota-ona',
+            'social_media': 'Ijtimoiy tarmoq',
+            'other':        'Boshqa',
+        }
+
+        result = [
+            {
+                'source':  k,
+                'label':   LABELS.get(k, k),
+                'count':   v,
+                'percent': round(v / total * 100, 1) if total > 0 else 0,
+            }
+            for k, v in sorted(refs.items(), key=lambda x: -x[1])
+        ]
+
+        return Response({'total': total, 'data': result})
 
     @action(detail=True, methods=['post'])
     def demote(self, request, pk=None):
