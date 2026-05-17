@@ -3,15 +3,27 @@ from .models import TeacherSalary, StaffSalary, TeacherWorkLog, StaffKpiRule
 
 
 class TeacherSalarySerializer(serializers.ModelSerializer):
-    teacher_name = serializers.CharField(source='teacher.user.get_full_name', read_only=True)
+    teacher_name    = serializers.CharField(source='teacher.user.get_full_name', read_only=True)
+    teacher_phone   = serializers.CharField(source='teacher.user.phone', read_only=True)
+    teacher_subject = serializers.CharField(source='teacher.subject', read_only=True)
+    students_count  = serializers.SerializerMethodField()
 
     class Meta:
         model = TeacherSalary
         fields = (
-            'id', 'company', 'teacher', 'teacher_name', 'month',
+            'id', 'company', 'teacher', 'teacher_name', 'teacher_phone', 'teacher_subject',
+            'students_count', 'month',
             'base_amount', 'kpi_amount', 'total_amount', 'paid_at', 'note', 'created_at',
         )
         read_only_fields = ('id', 'company', 'created_at')
+
+    def get_students_count(self, obj):
+        from apps.groups.models import GroupStudent
+        return GroupStudent.objects.filter(
+            group__teacher=obj.teacher,
+            group__status='active',
+            left_at__isnull=True,
+        ).count()
 
 
 class StaffSalarySerializer(serializers.ModelSerializer):

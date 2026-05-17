@@ -52,18 +52,25 @@ class ProfitLossView(APIView):
                 **cf, expense_date__gte=from_date, expense_date__lte=to_date
             )
 
-            total_income  = payments_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
-            total_expense = expenses_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
-            net_profit    = total_income - total_expense
+            total_income = payments_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+            # Only PAID teacher salaries count as expenses
+            teacher_sal = TeacherSalary.objects.filter(
+                **cf,
+                paid_at__date__gte=from_date,
+                paid_at__date__lte=to_date,
+            ).aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
 
             def _exp(cat):
                 return expenses_qs.filter(category=cat).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            teacher_sal = _exp('teacher_salary')
-            staff_sal   = _exp('staff_salary')
-            rent        = _exp('rent')
-            utility     = _exp('utility')
-            other       = total_expense - teacher_sal - staff_sal - rent - utility
+            staff_sal        = _exp('staff_salary')
+            rent             = _exp('rent')
+            utility          = _exp('utility')
+            non_teacher_exp  = expenses_qs.exclude(category='teacher_salary').aggregate(t=Sum('amount'))['t'] or Decimal('0')
+            other            = non_teacher_exp - staff_sal - rent - utility
+            total_expense    = non_teacher_exp + teacher_sal
+            net_profit       = total_income - total_expense
 
             # Stats — NOT date-filtered (current company state)
             from apps.leads.models  import Lead
@@ -126,9 +133,15 @@ class ProfitLossHistoryView(APIView):
                 **cf, paid_at__date__gte=month_from, paid_at__date__lte=month_to
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            expenses = Expense.objects.filter(
-                **cf, expense_date__gte=month_from, expense_date__lte=month_to
-            ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+            teacher_sal_m = TeacherSalary.objects.filter(
+                **cf, paid_at__date__gte=month_from, paid_at__date__lte=month_to,
+            ).aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
+
+            non_teacher_m = Expense.objects.filter(
+                **cf, expense_date__gte=month_from, expense_date__lte=month_to,
+            ).exclude(category='teacher_salary').aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+            expenses = teacher_sal_m + non_teacher_m
 
             results.append({
                 'month':    current.strftime('%Y-%m'),
