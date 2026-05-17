@@ -87,6 +87,8 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
 
         if amount <= 0:
             return Response({"error": "Summa musbat bo'lishi kerak"}, status=400)
+        if amount < 10000:
+            return Response({"error": "Minimal to'lov 10,000 so'm"}, status=400)
         if amount > remaining:
             return Response({"error": "Summa qarzdan oshib ketdi"}, status=400)
 

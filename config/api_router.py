@@ -15,7 +15,7 @@ urlpatterns = [
     path('sms-templates/', include('apps.notifications.sms_urls')),
     path('awards/', include('apps.awards.urls')),
     path('expenses/', include('apps.expenses.urls')),
-    path('staff-salaries/', include('apps.salaries.staff_urls')),
+    path('', include('apps.staff.urls')),
     path('teacher-salaries/', include('apps.salaries.teacher_urls')),
     path('audit-logs/', include('apps.audit.urls')),
     path('notifications/', include('apps.notifications.urls')),
