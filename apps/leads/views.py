@@ -117,29 +117,16 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='referral-stats')
     def referral_stats(self, request):
-        """GET /api/v1/leads/referral-stats/ — referral source breakdown across leads+students."""
+        """GET /api/v1/leads/referral-stats/ — referral source breakdown across leads+students.
+
+        Only the 5 canonical sources are returned. Any dirty/legacy value in the DB
+        (e.g. 'social', 'ads', 'recommendation') is folded into 'other' here so the
+        frontend never needs to handle unknown keys.
+        """
         from django.db.models import Count
         from apps.students.models import Student
 
-        company = request.user.company if request.user.role != 'superadmin' else None
-        cf = {} if company is None else {'company': company}
-
-        lead_refs = (
-            Lead.objects.filter(**cf, referral_source__isnull=False)
-            .values('referral_source').annotate(count=Count('id'))
-        )
-        student_refs = (
-            Student.objects.filter(**cf, referral_source__isnull=False)
-            .values('referral_source').annotate(count=Count('id'))
-        )
-
-        refs: dict = {}
-        for item in list(lead_refs) + list(student_refs):
-            key = item['referral_source']
-            refs[key] = refs.get(key, 0) + item['count']
-
-        total = sum(refs.values())
-
+        CANONICAL = {'banner', 'friend', 'parent', 'social_media', 'other'}
         LABELS = {
             'banner':       'Banner',
             'friend':       'Tanish orqali',
@@ -148,10 +135,35 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
             'other':        'Boshqa',
         }
 
+        company = request.user.company if request.user.role != 'superadmin' else None
+        cf = {} if company is None else {'company': company}
+
+        lead_refs = (
+            Lead.objects.filter(**cf, referral_source__isnull=False)
+            .exclude(referral_source='')
+            .values('referral_source').annotate(count=Count('id'))
+        )
+        student_refs = (
+            Student.objects.filter(**cf, referral_source__isnull=False)
+            .exclude(referral_source='')
+            .values('referral_source').annotate(count=Count('id'))
+        )
+
+        # Normalise: fold any non-canonical key into 'other'
+        refs: dict = {k: 0 for k in CANONICAL}
+        for item in list(lead_refs) + list(student_refs):
+            key = item['referral_source'] if item['referral_source'] in CANONICAL else 'other'
+            refs[key] += item['count']
+
+        # Drop canonical buckets that are still zero so the chart stays clean
+        refs = {k: v for k, v in refs.items() if v > 0}
+
+        total = sum(refs.values())
+
         result = [
             {
                 'source':  k,
-                'label':   LABELS.get(k, k),
+                'label':   LABELS[k],
                 'count':   v,
                 'percent': round(v / total * 100, 1) if total > 0 else 0,
             }
