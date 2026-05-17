@@ -136,6 +136,13 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 lead = Lead.objects.get(id=student_id, company=group.company)
             except Lead.DoesNotExist:
                 return Response({'detail': 'Student not found in this company.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if lead.status != 'pending':
+                return Response(
+                    {'error': f"Faqat kutilmoqda statusidagi leadlarni guruhga qo'shish mumkin. Hozirgi status: {lead.status}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             # Keep lead in leads table as trial; create linked trial student
             lead.status = 'trial'
             lead.save(update_fields=['status'])
