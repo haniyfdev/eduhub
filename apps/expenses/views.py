@@ -25,6 +25,13 @@ class ExpenseViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
             return ExpenseCreateSerializer
         return ExpenseSerializer
 
+    def perform_create(self, serializer):
+        serializer.save(
+            company=self.request.user.company,
+            source='manual',
+            created_by=self.request.user,
+        )
+
     def get_queryset(self):
             # Asosiy queryset (CompanyFilterMixin orqali faqat o'z kompaniyasini ko'radi)
             qs = Expense.objects.filter(company=self.request.user.company) if self.request.user.role != 'superadmin' else Expense.objects.all()
