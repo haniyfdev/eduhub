@@ -28,7 +28,7 @@ def create_teacher_work_log(sender, instance, created, **kwargs):
 def auto_promote_trial_student(sender, instance, created, **kwargs):  # noqa: ARG001
     if not created:
         return
-    if instance.status != 'present':
+    if instance.status == 'absent':
         return
 
     try:
@@ -55,7 +55,7 @@ def auto_promote_trial_student(sender, instance, created, **kwargs):  # noqa: AR
                 from apps.attendance.models import Attendance as Att
                 present_count = Att.objects.filter(
                     student=student,
-                    status='present',
+                    status__in=['present', 'late'],
                 ).count()
 
                 logger.info(f'{student.first_name} present_count={present_count}')
