@@ -10,29 +10,59 @@ import traceback
 from utils.permissions import IsSuperAdminOrBossOrManager
 from apps.payments.models import Payment
 from apps.teachers.models import Teacher
-from apps.salaries.models import TeacherSalary
+from apps.salaries.models import TeacherSalary, StaffSalary
 from .models import Expense
 
 
 def _parse_date_range(request):
-    """Parse from_date / to_date, defaulting to current-month start → today."""
     today = date.today()
     default_from = today.replace(day=1)
-
     from_str = request.query_params.get('from_date', str(default_from))
     to_str   = request.query_params.get('to_date',   str(today))
-
     try:
         from_date = date.fromisoformat(from_str)
     except (ValueError, AttributeError):
         from_date = default_from
-
     try:
         to_date = date.fromisoformat(to_str)
     except (ValueError, AttributeError):
         to_date = today
-
     return from_date, to_date
+
+
+def _salary_totals(cf, from_date, to_date):
+    """Return (teacher_sal, staff_sal, teacher_qs, staff_qs) for the given period."""
+    month_from = from_date.replace(day=1)
+
+    teacher_qs = TeacherSalary.objects.filter(
+        **cf,
+        month__gte=month_from,
+        month__lte=to_date,
+    )
+    teacher_sal = teacher_qs.aggregate(t=Sum('calculated_amount'))['t'] or Decimal('0')
+
+    staff_qs = StaffSalary.objects.filter(
+        **cf,
+        month__gte=month_from,
+        month__lte=to_date,
+    )
+    agg = staff_qs.aggregate(base=Sum('amount'), kpi=Sum('kpi_amount'))
+    staff_sal = (agg['base'] or Decimal('0')) + (agg['kpi'] or Decimal('0'))
+
+    return teacher_sal, staff_sal, teacher_qs, staff_qs
+
+
+def _manual_totals(manual_qs):
+    def _s(cat):
+        return manual_qs.filter(category=cat).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    return {
+        'rent':     _s('rent'),
+        'utility':  _s('utility'),
+        'tax':      _s('tax'),
+        'fine':     _s('fine'),
+        'discount': _s('discount'),
+        'other':    _s('other'),
+    }
 
 
 class ProfitLossView(APIView):
@@ -45,49 +75,69 @@ class ProfitLossView(APIView):
             company = request.user.company if request.user.role != 'superadmin' else None
             cf = {} if company is None else {'company': company}
 
-            payments_qs = Payment.objects.filter(
+            total_income = Payment.objects.filter(
                 **cf, paid_at__date__gte=from_date, paid_at__date__lte=to_date
-            )
-            expenses_qs = Expense.objects.filter(
-                **cf, expense_date__gte=from_date, expense_date__lte=to_date
-            )
+            ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            total_income = payments_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+            teacher_sal, staff_sal, teacher_qs, staff_qs = _salary_totals(cf, from_date, to_date)
 
-            # Only PAID teacher salaries count as expenses (use paid_amount, filter by paid_at)
-            teacher_sal = TeacherSalary.objects.filter(
+            # Manual expenses only (exclude auto-mirrored salary rows)
+            manual_qs = Expense.objects.filter(
                 **cf,
-                paid_amount__gt=0,
-                paid_at__date__gte=from_date,
-                paid_at__date__lte=to_date,
-            ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
+                expense_date__gte=from_date,
+                expense_date__lte=to_date,
+            ).exclude(category__in=['teacher_salary', 'staff_salary'])
 
-            def _exp(cat):
-                return expenses_qs.filter(category=cat).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+            cats = _manual_totals(manual_qs)
+            total_expense = teacher_sal + staff_sal + sum(cats.values())
+            net_profit    = total_income - total_expense
 
-            staff_sal        = _exp('staff_salary')
-            rent             = _exp('rent')
-            utility          = _exp('utility')
-            non_teacher_exp  = expenses_qs.exclude(category='teacher_salary').aggregate(t=Sum('amount'))['t'] or Decimal('0')
-            other            = non_teacher_exp - staff_sal - rent - utility
-            total_expense    = non_teacher_exp + teacher_sal
-            net_profit       = total_income - total_expense
+            # Build breakdown list for the expenses table
+            breakdown = []
+            if teacher_sal > 0:
+                first_month = teacher_qs.order_by('month').values_list('month', flat=True).first()
+                breakdown.append({
+                    'id': None,
+                    'category': 'teacher_salary',
+                    'amount': teacher_sal,
+                    'date': str(first_month) if first_month else None,
+                    'note': "O'qituvchilar maoshi",
+                    'source': 'auto',
+                })
+            if staff_sal > 0:
+                first_month = staff_qs.order_by('month').values_list('month', flat=True).first()
+                breakdown.append({
+                    'id': None,
+                    'category': 'staff_salary',
+                    'amount': staff_sal,
+                    'date': str(first_month) if first_month else None,
+                    'note': "Xodimlar maoshi",
+                    'source': 'auto',
+                })
+            for exp in manual_qs.order_by('-expense_date'):
+                breakdown.append({
+                    'id': str(exp.id),
+                    'category': exp.category,
+                    'amount': exp.amount,
+                    'date': str(exp.expense_date),
+                    'note': exp.description,
+                    'source': exp.source,
+                })
 
-            # Stats — NOT date-filtered (current company state)
-            from apps.leads.models  import Lead
+            # Stats (not date-filtered — current state)
+            from apps.leads.models   import Lead
             from apps.students.models import Student
-            from apps.groups.models import Group
-            from apps.debts.models  import Debt
+            from apps.groups.models  import Group
+            from apps.debts.models   import Debt
 
             debts_qs = Debt.objects.filter(**cf, status__in=['unpaid', 'partial', 'overdue'])
-
             stats = {
-                'total_leads':        Lead.objects.filter(**cf).count(),
-                'active_students':    Student.objects.filter(**cf, status='active').count(),
-                'active_teachers':    Teacher.objects.filter(**cf, status='active').count(),
-                'active_groups':      Group.objects.filter(**cf, status='active').count(),
-                'total_debtors':      debts_qs.count(),
-                'total_debt_amount':  debts_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0'),
+                'total_leads':       Lead.objects.filter(**cf).count(),
+                'active_students':   Student.objects.filter(**cf, status='active').count(),
+                'active_teachers':   Teacher.objects.filter(**cf, status='active').count(),
+                'active_groups':     Group.objects.filter(**cf, status='active').count(),
+                'total_debtors':     debts_qs.count(),
+                'total_debt_amount': debts_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0'),
             }
 
             return Response({
@@ -95,15 +145,19 @@ class ProfitLossView(APIView):
                 'to_date':   str(to_date),
                 'income':   {'total': total_income},
                 'expenses': {
-                    'total':           total_expense,
+                    'total':            total_expense,
                     'teacher_salaries': teacher_sal,
                     'staff_salaries':   staff_sal,
-                    'rent':             rent,
-                    'utility':          utility,
-                    'other':            other,
+                    'rent':             cats['rent'],
+                    'utility':          cats['utility'],
+                    'tax':              cats['tax'],
+                    'fine':             cats['fine'],
+                    'discount':         cats['discount'],
+                    'other':            cats['other'],
+                    'breakdown':        breakdown,
                 },
                 'net_profit':         net_profit,
-                'net_profit_percent': float(net_profit  / total_income * 100) if total_income else 0,
+                'net_profit_percent': float(net_profit   / total_income * 100) if total_income else 0,
                 'expense_percent':    float(total_expense / total_income * 100) if total_income else 0,
                 'stats': stats,
             })
@@ -113,8 +167,7 @@ class ProfitLossView(APIView):
 
 
 class ProfitLossHistoryView(APIView):
-    """GET /api/v1/profit-loss/history/?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD
-    Groups results by calendar month within the date range."""
+    """GET /api/v1/profit-loss/history/?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD"""
     permission_classes = [IsSuperAdminOrBossOrManager]
 
     def get(self, request):
@@ -126,26 +179,32 @@ class ProfitLossHistoryView(APIView):
         current = from_date.replace(day=1)
 
         while current <= to_date:
-            next_month  = current + relativedelta(months=1)
-            month_from  = max(from_date, current)
-            month_to    = min(to_date, next_month - timedelta(days=1))
+            next_month = current + relativedelta(months=1)
+            month_from = max(from_date, current)
+            month_to   = min(to_date, next_month - timedelta(days=1))
 
             income = Payment.objects.filter(
-                **cf, paid_at__date__gte=month_from, paid_at__date__lte=month_to
+                **cf, paid_at__date__gte=month_from, paid_at__date__lte=month_to,
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            teacher_sal_m = TeacherSalary.objects.filter(
+            teacher_m = TeacherSalary.objects.filter(
+                **cf, month=current,
+            ).aggregate(t=Sum('calculated_amount'))['t'] or Decimal('0')
+
+            staff_agg = StaffSalary.objects.filter(
+                **cf, month=current,
+            ).aggregate(base=Sum('amount'), kpi=Sum('kpi_amount'))
+            staff_m = (staff_agg['base'] or Decimal('0')) + (staff_agg['kpi'] or Decimal('0'))
+
+            manual_m = Expense.objects.filter(
                 **cf,
-                paid_amount__gt=0,
-                paid_at__date__gte=month_from,
-                paid_at__date__lte=month_to,
-            ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
+                expense_date__gte=month_from,
+                expense_date__lte=month_to,
+            ).exclude(category__in=['teacher_salary', 'staff_salary']).aggregate(
+                t=Sum('amount')
+            )['t'] or Decimal('0')
 
-            non_teacher_m = Expense.objects.filter(
-                **cf, expense_date__gte=month_from, expense_date__lte=month_to,
-            ).exclude(category='teacher_salary').aggregate(t=Sum('amount'))['t'] or Decimal('0')
-
-            expenses = teacher_sal_m + non_teacher_m
+            expenses = teacher_m + staff_m + manual_m
 
             results.append({
                 'month':    current.strftime('%Y-%m'),
@@ -176,17 +235,17 @@ class ProfitLossTeachersView(APIView):
                     paid_at__date__gte=from_date, paid_at__date__lte=to_date,
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-                salary_qs = TeacherSalary.objects.filter(
+                salary = TeacherSalary.objects.filter(
                     teacher=teacher,
                     month__gte=from_date.replace(day=1),
-                    month__lte=to_date.replace(day=1),
+                    month__lte=to_date,
                 ).aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
 
                 result.append({
                     'teacher_id':   str(teacher.id),
                     'teacher_name': teacher.user.get_full_name(),
                     'revenue':      revenue,
-                    'salary':       salary_qs,
+                    'salary':       salary,
                 })
             return Response(result)
 
@@ -217,8 +276,7 @@ class IncomeByCourseView(APIView):
 
 
 class DebtForecastView(APIView):
-    """GET /api/v1/profit-loss/debt-forecast/
-    Debts are outstanding balances — not date-filtered."""
+    """GET /api/v1/profit-loss/debt-forecast/"""
     permission_classes = [IsSuperAdminOrBossOrManager]
 
     def get(self, request):

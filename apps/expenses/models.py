@@ -22,7 +22,7 @@ class Expense(BaseModel):
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES)
     amount = models.DecimalField(max_digits=15, decimal_places=2)
-    description = models.CharField(max_length=500, blank=True, default='')
+    description = models.TextField(blank=True, default='')
     expense_date = models.DateField()
     reference_id = models.UUIDField(null=True, blank=True)
     created_by = models.ForeignKey(
