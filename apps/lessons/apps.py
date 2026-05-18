@@ -1,4 +1,4 @@
-﻿from django.apps import AppConfig
+from django.apps import AppConfig
 
 
 class LessonsConfig(AppConfig):
@@ -6,10 +6,12 @@ class LessonsConfig(AppConfig):
     name = 'apps.lessons'
 
     def ready(self):
-        import apps.lessons.signals  # noqa: F401
+        import apps.lessons.signals  # noqa: F401  (registers create_teacher_work_log via @receiver)
         from django.db.models.signals import post_save
         from apps.attendance.models import Attendance
         from apps.lessons.signals import auto_promote_trial_student
-        post_save.connect(auto_promote_trial_student, sender=Attendance,
-                          dispatch_uid='lessons.auto_promote_trial_student')
-
+        post_save.connect(
+            auto_promote_trial_student,
+            sender=Attendance,
+            dispatch_uid='auto_promote_trial_student_unique',
+        )

@@ -1,5 +1,7 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.db import transaction
+from datetime import date, timedelta
 
 
 @receiver(post_save, sender='lessons.Lesson')
@@ -20,35 +22,59 @@ def create_teacher_work_log(sender, instance, created, **kwargs):
     )
 
 
-def auto_promote_trial_student(sender, instance, **kwargs):
+def auto_promote_trial_student(sender, instance, created, **kwargs):
+    if not created:
+        return
     if instance.status != 'present':
         return
+
     student = instance.student
-    if student.status != 'trial':
-        return
-    from apps.attendance.models import Attendance
-    present_count = Attendance.objects.filter(student=student, status='present').count()
-    if present_count >= 2:
-        lead_id = student.lead_id    # capture raw FK before clearing
-        student.status = 'active'
-        student.lead = None
-        student.save(update_fields=['status', 'lead'])
 
-        # Delete linked lead — student fully converted, must not appear in leads
-        if lead_id:
-            try:
+    with transaction.atomic():
+        # Re-fetch inside transaction to get the authoritative status
+        from apps.students.models import Student
+        student = Student.objects.select_for_update().get(pk=student.pk)
+
+        # CASE 1: pending → trial (first lesson attended)
+        if student.status == 'pending':
+            student.status = 'trial'
+            student.save(update_fields=['status'])
+            if student.lead_id:
                 from apps.leads.models import Lead
-                Lead.objects.filter(id=lead_id).delete()
-            except Exception:
-                pass
+                Lead.objects.filter(id=student.lead_id).update(status='trial')
+            return
 
-        # Create debt now that student is active
-        try:
-            from apps.debts.models import Debt
+        # CASE 2: trial → active (2nd present attendance)
+        if student.status == 'trial':
+            from apps.attendance.models import Attendance
+            present_count = Attendance.objects.filter(
+                student=student,
+                status='present',
+            ).count()
+
+            if present_count < 2:
+                return
+
+            # 1. Promote student
+            student.status = 'active'
+            student.save(update_fields=['status'])
+
+            # 2. Delete linked lead (on_delete=SET_NULL handles student.lead → NULL)
+            if student.lead_id:
+                from apps.leads.models import Lead
+                Lead.objects.filter(id=student.lead_id).delete()
+                Student.objects.filter(pk=student.pk).update(lead=None)
+
+            # 3. Create debt
             from apps.groups.models import GroupStudent
-            from datetime import date, timedelta
-            gs = GroupStudent.objects.filter(student=student, left_at__isnull=True).first()
-            if gs:
+            gs = (
+                GroupStudent.objects
+                .filter(student=student, left_at__isnull=True)
+                .select_related('group__course')
+                .first()
+            )
+            if gs and gs.group.course and gs.group.course.price:
+                from apps.debts.models import Debt
                 Debt.objects.get_or_create(
                     student=student,
                     company=student.company,
@@ -58,7 +84,3 @@ def auto_promote_trial_student(sender, instance, **kwargs):
                         'status': 'unpaid',
                     },
                 )
-        except Exception:
-            pass
-
-
