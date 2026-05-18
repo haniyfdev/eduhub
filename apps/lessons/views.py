@@ -136,13 +136,4 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
                 id__in=student_ids, status='pending'
             ).update(status='trial')
 
-        elif finished_count == 1:
-            # Bu ikkinchi dars boshlanayapti — hammasi active ga o'tadi
-            student_ids = lesson.group.memberships.filter(
-                left_at__isnull=True
-            ).values_list('student_id', flat=True)
-            Student.objects.filter(
-                id__in=student_ids, status='trial'
-            ).update(status='active')
-
         return Response(LessonSerializer(lesson).data)
