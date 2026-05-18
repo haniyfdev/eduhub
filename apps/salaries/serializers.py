@@ -8,6 +8,7 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
     salary_type     = serializers.CharField(source='teacher.salary_type', read_only=True)
     students_count  = serializers.SerializerMethodField()
     total_owed      = serializers.SerializerMethodField()
+    carry_over      = serializers.SerializerMethodField()
 
     class Meta:
         model = TeacherSalary
@@ -29,7 +30,21 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         ).count()
 
     def get_total_owed(self, obj):
-        return obj.calculated_amount + obj.carry_over
+        return obj.calculated_amount + self.get_carry_over(obj)
+
+    def get_carry_over(self, obj):
+        from django.db.models import Sum
+        from decimal import Decimal
+        result = TeacherSalary.objects.filter(
+            teacher=obj.teacher,
+            month__lt=obj.month,
+            company=obj.company,
+        ).exclude(status='paid').aggregate(
+            total_calc=Sum('calculated_amount'),
+            total_paid=Sum('paid_amount'),
+        )
+        total = (result['total_calc'] or Decimal('0')) - (result['total_paid'] or Decimal('0'))
+        return max(total, Decimal('0'))
 
 
 class StaffSalarySerializer(serializers.ModelSerializer):
