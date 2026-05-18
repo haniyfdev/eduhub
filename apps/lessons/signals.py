@@ -4,6 +4,7 @@ from django.db import transaction
 from datetime import date, timedelta
 
 
+
 @receiver(post_save, sender='lessons.Lesson')
 def create_teacher_work_log(sender, instance, created, **kwargs):
     if not created:
@@ -21,10 +22,8 @@ def create_teacher_work_log(sender, instance, created, **kwargs):
         students_count=students_count,
     )
 
-
-def auto_promote_trial_student(sender, instance, created, **kwargs):
-    if not created:
-        return
+@receiver(post_save, sender='attendance.Attendance')
+def auto_promote_trial_student(sender, instance, **kwargs):
     if instance.status != 'present':
         return
 
