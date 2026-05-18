@@ -79,4 +79,25 @@ def calculate_teacher_salary(teacher, month):
             'carry_over':        carry_over,
         },
     )
+
+    # Reconcile status with actual payment state — guards against
+    # recalculation bumping calculated_amount above paid_amount on a
+    # previously-paid record, or a ghost 'paid' from a zero-amount cycle.
+    total = salary.calculated_amount + salary.carry_over
+    if total <= 0:
+        correct_status = 'unpaid'
+    elif salary.paid_amount >= total:
+        correct_status = 'paid'
+    elif salary.paid_amount > 0:
+        correct_status = 'partial'
+    else:
+        correct_status = 'unpaid'
+
+    if salary.status != correct_status:
+        salary.status  = correct_status
+        salary.is_paid = correct_status == 'paid'
+        if correct_status != 'paid':
+            salary.paid_at = None
+        salary.save(update_fields=['status', 'is_paid', 'paid_at'])
+
     return salary

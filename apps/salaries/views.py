@@ -93,11 +93,12 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             return Response({"error": "Summa qarzdan oshib ketdi"}, status=400)
 
         salary.paid_amount += amount
+        new_remaining = total_owed - salary.paid_amount
 
-        if salary.paid_amount >= total_owed:
-            salary.status    = 'paid'
-            salary.is_paid   = True
-            salary.paid_at   = timezone.now()
+        if new_remaining <= 0 and total_owed > 0:
+            salary.status     = 'paid'
+            salary.is_paid    = True
+            salary.paid_at    = timezone.now()
             salary.carry_over = Decimal('0')
         else:
             salary.status = 'partial'
