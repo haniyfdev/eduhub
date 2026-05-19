@@ -81,13 +81,33 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     def archive(self, request, pk=None):
         student = self.get_object()
         reason = request.data.get('reason')
+
         if reason not in ['graduated', 'dropped_out']:
-            return Response({'error': "Sabab ko'rsatilishi shart"}, status=400)
-        student.status = 'archived'
-        student.archive_reason = reason
-        student.archived_at = timezone.now()
-        student.save()
-        return Response({'status': 'archived', 'reason': reason})
+            return Response({'error': "Arxivlash sababi ko'rsatilishi shart"}, status=400)
+
+        if student.status == 'trial' and reason == 'graduated':
+            return Response(
+                {'error': "Sinov muddatidagi talaba uchun bu variant mavjud emas"},
+                status=400,
+            )
+
+        from django.db import transaction
+        from apps.leads.models import Lead
+
+        with transaction.atomic():
+            student.status = 'archived'
+            student.archive_reason = reason
+            student.archived_at = timezone.now()
+            student.save(update_fields=['status', 'archive_reason', 'archived_at'])
+
+            if student.lead_id:
+                if reason == 'dropped_out':
+                    Lead.objects.filter(id=student.lead_id).update(status='ignored')
+                else:
+                    Lead.objects.filter(id=student.lead_id).delete()
+                Student.objects.filter(id=student.id).update(lead=None)
+
+        return Response({'status': 'archived', 'reason': reason, 'student_id': str(student.id)})
  
     @action(detail=True, methods=['get'])
     def payments(self, request, pk=None):
