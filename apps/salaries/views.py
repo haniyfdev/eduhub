@@ -18,14 +18,10 @@ from .serializers import (
 
 class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                            mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    """
-    GET  /api/v1/teacher-salaries/
-    GET  /api/v1/teacher-salaries/{id}/
-    POST /api/v1/teacher-salaries/{id}/mark-paid/
-    """
-    queryset = TeacherSalary.objects.select_related('teacher__user').order_by('-month')
+    queryset = TeacherSalary.objects.select_related(
+        'teacher__user', 'group__course'
+    ).order_by('teacher__user__first_name', 'group__course__name')
     serializer_class = TeacherSalarySerializer
-    filterset_fields = ['teacher']
     http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
@@ -53,75 +49,87 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             except ValueError:
                 pass
 
-        # Only show salaries for active teachers who have at least one active group
-        qs = qs.filter(teacher__status='active', teacher__groups__status='active').distinct()
-
-        return qs.order_by('-total_amount')
+        return qs.filter(teacher__status='active')
 
     def get_permissions(self):
         return [IsAuthenticated()]
 
-    @action(detail=True, methods=['post'], url_path='mark-paid')
-    def mark_paid(self, request, pk=None):
-        """Legacy alias — delegates to pay() with full amount."""
-        salary = self.get_object()
-        total_owed = salary.calculated_amount + salary.carry_over
-        remaining  = total_owed - salary.paid_amount
-        request.data['amount'] = str(remaining) if remaining > 0 else str(total_owed)
-        return self.pay(request, pk=pk)
+    def list(self, request, *args, **kwargs):
+        """Return salaries grouped by teacher."""
+        salaries = list(self.get_queryset())
+        serializer = TeacherSalarySerializer(salaries, many=True)
+        salary_data_list = serializer.data
 
-    @action(detail=True, methods=['post'], url_path='pay')
-    def pay(self, request, pk=None):
-        """POST /api/v1/teacher-salaries/{id}/pay/  body: {amount}"""
-        from decimal import Decimal, InvalidOperation
-        from apps.expenses.models import Expense
+        teacher_map = {}
+        for salary, sdata in zip(salaries, salary_data_list):
+            tid = str(salary.teacher_id)
+            if tid not in teacher_map:
+                teacher_map[tid] = {
+                    'teacher_id': tid,
+                    'teacher_name': sdata['teacher_name'],
+                    'teacher_subject': sdata['teacher_subject'],
+                    'salary_type': sdata['salary_type'],
+                    'salary_percent': sdata['salary_percent'],
+                    'fixed_amount': sdata['fixed_amount'],
+                    'per_student_amt': sdata['per_student_amt'],
+                    'kpi_amount': 0,
+                    'total_calculated': 0,
+                    'total_paid': 0,
+                    'total_owed': 0,
+                    'groups': [],
+                }
 
-        salary = self.get_object()
-        try:
-            amount = Decimal(str(request.data.get('amount', 0)))
-        except (InvalidOperation, TypeError):
-            return Response({'error': "Noto'g'ri summa"}, status=400)
+            entry = teacher_map[tid]
+            carry_over = float(sdata['carry_over'] or 0)
+            total_owed = float(sdata['total_owed'] or salary.calculated_amount)
+            kpi = float(salary.kpi_amount or 0)
 
-        total_owed = salary.calculated_amount + salary.carry_over
-        remaining  = total_owed - salary.paid_amount
+            entry['kpi_amount'] = max(float(entry['kpi_amount']), kpi)
+            entry['total_calculated'] += float(salary.calculated_amount)
+            entry['total_paid'] += float(salary.paid_amount)
+            entry['total_owed'] += total_owed
 
-        if amount <= 0:
-            return Response({"error": "Summa musbat bo'lishi kerak"}, status=400)
-        if amount < 10000:
-            return Response({"error": "Minimal to'lov 10,000 so'm"}, status=400)
-        if amount > remaining:
-            return Response({"error": "Summa qarzdan oshib ketdi"}, status=400)
+            entry['groups'].append({
+                'salary_id':        str(salary.id),
+                'group_id':         sdata['group_id'],
+                'group_name':       sdata['group_name'],
+                'course_name':      sdata['course_name'],
+                'calculated_amount': float(salary.calculated_amount),
+                'paid_amount':      float(salary.paid_amount),
+                'carry_over':       carry_over,
+                'total_owed':       total_owed,
+                'status':           salary.status,
+                'due_date':         sdata['due_date'],
+                'first_active_date': sdata['first_active_date'],
+                'student_count':    sdata['student_count'],
+                'course_price':     float(sdata['course_price'] or 0),
+                'kpi_amount':       kpi,
+            })
 
-        salary.paid_amount += amount
-        new_remaining = total_owed - salary.paid_amount
+        results = []
+        for entry in teacher_map.values():
+            remaining = entry['total_owed'] - entry['total_paid']
+            if remaining <= 0:
+                entry['overall_status'] = 'paid'
+            elif entry['total_paid'] > 0:
+                entry['overall_status'] = 'partial'
+            else:
+                entry['overall_status'] = 'unpaid'
+            results.append(entry)
 
-        if new_remaining <= 0 and total_owed > 0:
-            salary.status     = 'paid'
-            salary.is_paid    = True
-            salary.paid_at    = timezone.now()
-            salary.carry_over = Decimal('0')
-        else:
-            salary.status = 'partial'
+        return Response(results)
 
-        salary.save()
-
-        # Record the payment as an expense
-        teacher_name = salary.teacher.user.get_full_name()
-        Expense.objects.create(
-            company=salary.teacher.company,
-            category='teacher_salary',
-            source='auto',
-            amount=amount,
-            description=f"{teacher_name} — {salary.month.strftime('%B %Y')} maoshi",
-            expense_date=timezone.now().date(),
-        )
-
-        return Response(TeacherSalarySerializer(salary).data)
+    @action(detail=False, methods=['post'], url_path='generate')
+    def generate(self, request):
+        """POST /api/v1/teacher-salaries/generate/?month=YYYY-MM"""
+        return self._run_generate(request)
 
     @action(detail=False, methods=['post'], url_path='calculate')
     def calculate(self, request):
-        """POST /api/v1/teacher-salaries/calculate/?month=YYYY-MM
-        Calculate (create if missing) salaries for all active teachers this month."""
+        """POST /api/v1/teacher-salaries/calculate/?month=YYYY-MM  (alias for generate)"""
+        return self._run_generate(request)
+
+    def _run_generate(self, request):
         import datetime
         from apps.salaries.logic import calculate_teacher_salary
         from apps.teachers.models import Teacher as TeacherModel
@@ -136,38 +144,190 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             except (ValueError, AttributeError):
                 return Response({'detail': 'Format: YYYY-MM'}, status=400)
         else:
-            today = datetime.date.today()
-            month = today.replace(day=1)
+            month = datetime.date.today().replace(day=1)
 
-        teachers = TeacherModel.objects.filter(
-            company=company, status='active', groups__status='active',
-        ).distinct()
-        created, skipped = [], []
-
+        teachers = TeacherModel.objects.filter(company=company, status='active')
+        created_count = 0
         for teacher in teachers:
-            name = teacher.user.get_full_name()
-            existing = TeacherSalary.objects.filter(teacher=teacher, month=month).first()
-            if existing and existing.status == 'paid':
-                skipped.append(name)
-            else:
-                calculate_teacher_salary(teacher, month)
-                created.append(name)
+            salaries = calculate_teacher_salary(teacher, month)
+            created_count += len(salaries)
 
-        return Response({
-            'month':   month.strftime('%Y-%m'),
-            'created': created,
-            'skipped': skipped,
-        })
+        return Response({'month': month.strftime('%Y-%m'), 'created': created_count})
+
+    @action(detail=True, methods=['post'], url_path='pay')
+    def pay(self, request, pk=None):
+        """POST /api/v1/teacher-salaries/{id}/pay/  body: {amount}"""
+        from decimal import Decimal, InvalidOperation
+        from django.db.models import Sum
+        from apps.expenses.models import Expense
+
+        salary = self.get_object()
+        try:
+            amount = Decimal(str(request.data.get('amount', 0)))
+        except (InvalidOperation, TypeError):
+            return Response({'error': "Noto'g'ri summa"}, status=400)
+
+        # Compute carry_over from previous unpaid records for same teacher+group
+        result = TeacherSalary.objects.filter(
+            teacher=salary.teacher,
+            group=salary.group,
+            month__lt=salary.month,
+            company=salary.company,
+        ).exclude(status='paid').aggregate(
+            total_calc=Sum('calculated_amount'),
+            total_paid=Sum('paid_amount'),
+        )
+        carry_over = max(
+            (result['total_calc'] or Decimal('0')) - (result['total_paid'] or Decimal('0')),
+            Decimal('0'),
+        )
+
+        total_owed = salary.calculated_amount + carry_over
+        remaining  = total_owed - salary.paid_amount
+
+        if amount <= 0:
+            return Response({"error": "Summa musbat bo'lishi kerak"}, status=400)
+        if amount < 10000:
+            return Response({"error": "Minimal to'lov 10,000 so'm"}, status=400)
+        if amount > remaining:
+            return Response({"error": "Summa qarzdan oshib ketdi"}, status=400)
+
+        salary.paid_amount += amount
+        new_remaining = total_owed - salary.paid_amount
+
+        if new_remaining <= 0 and total_owed > 0:
+            salary.status  = 'paid'
+            salary.is_paid = True
+            salary.paid_at = timezone.now()
+        else:
+            salary.status = 'partial'
+
+        salary.save()
+
+        teacher_name = salary.teacher.user.get_full_name()
+        group_label  = f' ({salary.group.name})' if salary.group else ''
+        Expense.objects.create(
+            company=salary.company,
+            category='teacher_salary',
+            source='auto',
+            amount=amount,
+            description=f"{teacher_name}{group_label} — {salary.month.strftime('%B %Y')} maoshi",
+            expense_date=timezone.now().date(),
+        )
+
+        return Response(TeacherSalarySerializer(salary).data)
+
+    @action(detail=True, methods=['post'], url_path='mark-paid')
+    def mark_paid(self, request, pk=None):
+        """Legacy alias — pays full remaining amount."""
+        from decimal import Decimal
+        from django.db.models import Sum
+        salary = self.get_object()
+        result = TeacherSalary.objects.filter(
+            teacher=salary.teacher,
+            group=salary.group,
+            month__lt=salary.month,
+            company=salary.company,
+        ).exclude(status='paid').aggregate(
+            total_calc=Sum('calculated_amount'),
+            total_paid=Sum('paid_amount'),
+        )
+        carry_over = max(
+            (result['total_calc'] or Decimal('0')) - (result['total_paid'] or Decimal('0')),
+            Decimal('0'),
+        )
+        total_owed = salary.calculated_amount + carry_over
+        remaining  = total_owed - salary.paid_amount
+        request.data['amount'] = str(remaining) if remaining > 0 else str(total_owed)
+        return self.pay(request, pk=pk)
+
+    @action(detail=False, methods=['post'], url_path='bulk-pay')
+    def bulk_pay(self, request):
+        """POST /api/v1/teacher-salaries/bulk-pay/
+        body: { payments: [{ salary_id, amount }, ...] }
+        """
+        from decimal import Decimal, InvalidOperation
+        from django.db.models import Sum
+        from apps.expenses.models import Expense
+
+        payments = request.data.get('payments', [])
+        if not payments:
+            return Response({'error': 'payments list is required'}, status=400)
+
+        results = []
+        errors  = []
+
+        for payment in payments:
+            salary_id = payment.get('salary_id')
+            try:
+                amount = Decimal(str(payment.get('amount', 0)))
+            except (InvalidOperation, TypeError):
+                errors.append({'salary_id': salary_id, 'error': "Noto'g'ri summa"})
+                continue
+
+            try:
+                salary = TeacherSalary.objects.get(id=salary_id, company=request.user.company)
+            except TeacherSalary.DoesNotExist:
+                errors.append({'salary_id': salary_id, 'error': 'Not found'})
+                continue
+
+            result = TeacherSalary.objects.filter(
+                teacher=salary.teacher,
+                group=salary.group,
+                month__lt=salary.month,
+                company=salary.company,
+            ).exclude(status='paid').aggregate(
+                total_calc=Sum('calculated_amount'),
+                total_paid=Sum('paid_amount'),
+            )
+            carry_over = max(
+                (result['total_calc'] or Decimal('0')) - (result['total_paid'] or Decimal('0')),
+                Decimal('0'),
+            )
+
+            total_owed = salary.calculated_amount + carry_over
+            remaining  = total_owed - salary.paid_amount
+
+            if amount <= 0:
+                errors.append({'salary_id': salary_id, 'error': "Summa musbat bo'lishi kerak"})
+                continue
+            if amount < 10000:
+                errors.append({'salary_id': salary_id, 'error': "Minimal to'lov 10,000 so'm"})
+                continue
+            if amount > remaining:
+                amount = remaining  # cap at remaining
+
+            salary.paid_amount += amount
+            new_remaining = total_owed - salary.paid_amount
+
+            if new_remaining <= 0 and total_owed > 0:
+                salary.status  = 'paid'
+                salary.is_paid = True
+                salary.paid_at = timezone.now()
+            else:
+                salary.status = 'partial'
+
+            salary.save()
+
+            teacher_name = salary.teacher.user.get_full_name()
+            group_label  = f' ({salary.group.name})' if salary.group else ''
+            Expense.objects.create(
+                company=salary.company,
+                category='teacher_salary',
+                source='auto',
+                amount=amount,
+                description=f"{teacher_name}{group_label} — {salary.month.strftime('%B %Y')} maoshi",
+                expense_date=timezone.now().date(),
+            )
+
+            results.append(TeacherSalarySerializer(salary).data)
+
+        return Response({'results': results, 'errors': errors})
 
 
 class StaffSalaryViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
                          mixins.ListModelMixin, mixins.RetrieveModelMixin,
                          viewsets.GenericViewSet):
-    """
-    GET  /api/v1/staff-salaries/
-    POST /api/v1/staff-salaries/   — triggers Expense mirror via signal (Rule 10)
-    GET  /api/v1/staff-salaries/{id}/
-    """
     queryset = StaffSalary.objects.select_related('user').order_by('-month')
     http_method_names = ['get', 'post', 'head', 'options']
     filterset_fields = ['user']
@@ -194,18 +354,10 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         return StaffSalarySerializer
 
     def perform_create(self, serializer):
-        # Signal in apps/salaries/signals.py auto-creates the Expense mirror
         serializer.save(company=self.request.user.company)
 
 
 class StaffKpiRuleViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
-    """
-    GET    /api/v1/staff-kpi-rules/
-    POST   /api/v1/staff-kpi-rules/
-    GET    /api/v1/staff-kpi-rules/{id}/
-    PATCH  /api/v1/staff-kpi-rules/{id}/
-    POST   /api/v1/staff-kpi-rules/{id}/archive/
-    """
     queryset = StaffKpiRule.objects.filter(status='active').order_by('created_at')
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 

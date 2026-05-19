@@ -11,7 +11,9 @@ class TeacherSalary(BaseModel):
 
     company           = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='teacher_salaries')
     teacher           = models.ForeignKey('teachers.Teacher', on_delete=models.CASCADE, related_name='salaries')
+    group             = models.ForeignKey('groups.Group', on_delete=models.CASCADE, null=True, blank=True, related_name='teacher_salaries')
     month             = models.DateField()
+    due_date          = models.DateField(null=True, blank=True)
     base_amount       = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     kpi_amount        = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     total_amount      = models.DecimalField(max_digits=15, decimal_places=2, default=0)
@@ -26,7 +28,7 @@ class TeacherSalary(BaseModel):
 
     class Meta:
         db_table = 'teacher_salaries'
-        unique_together = ('teacher', 'month')
+        unique_together = [('teacher', 'group', 'month')]
 
     def __str__(self):
         return f"{self.teacher} — {self.month}"

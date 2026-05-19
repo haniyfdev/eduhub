@@ -5,42 +5,72 @@ from .models import TeacherSalary, StaffSalary, TeacherWorkLog, StaffKpiRule
 class TeacherSalarySerializer(serializers.ModelSerializer):
     teacher_name    = serializers.CharField(source='teacher.user.get_full_name', read_only=True)
     teacher_subject = serializers.CharField(source='teacher.subject', read_only=True)
-    salary_type       = serializers.CharField(source='teacher.salary_type', read_only=True)
-    salary_percent    = serializers.DecimalField(source='teacher.salary_percent', max_digits=5, decimal_places=2, read_only=True)
-    fixed_amount      = serializers.DecimalField(source='teacher.fixed_amount', max_digits=15, decimal_places=2, read_only=True)
-    per_student_amt   = serializers.DecimalField(source='teacher.per_student_amt', max_digits=15, decimal_places=2, read_only=True)
-    students_count    = serializers.SerializerMethodField()
-    total_owed      = serializers.SerializerMethodField()
-    carry_over      = serializers.SerializerMethodField()
+    salary_type     = serializers.CharField(source='teacher.salary_type', read_only=True)
+    salary_percent  = serializers.DecimalField(source='teacher.salary_percent', max_digits=5, decimal_places=2, read_only=True, allow_null=True)
+    fixed_amount    = serializers.DecimalField(source='teacher.fixed_amount', max_digits=15, decimal_places=2, read_only=True, allow_null=True)
+    per_student_amt = serializers.DecimalField(source='teacher.per_student_amt', max_digits=15, decimal_places=2, read_only=True, allow_null=True)
+    group_id          = serializers.SerializerMethodField()
+    group_name        = serializers.SerializerMethodField()
+    course_name       = serializers.SerializerMethodField()
+    student_count     = serializers.SerializerMethodField()
+    course_price      = serializers.SerializerMethodField()
+    first_active_date = serializers.SerializerMethodField()
+    carry_over        = serializers.SerializerMethodField()
+    total_owed        = serializers.SerializerMethodField()
 
     class Meta:
         model = TeacherSalary
         fields = (
-            'id', 'company', 'teacher', 'teacher_name', 'teacher_subject',
-            'salary_type', 'salary_percent', 'fixed_amount', 'per_student_amt', 'students_count', 'month',
-            'base_amount', 'kpi_amount', 'total_amount',
+            'id', 'teacher', 'teacher_name', 'teacher_subject',
+            'group_id', 'group_name', 'course_name',
+            'month', 'due_date',
+            'salary_type', 'salary_percent', 'fixed_amount', 'per_student_amt',
+            'kpi_amount', 'student_count', 'course_price', 'first_active_date',
             'calculated_amount', 'paid_amount', 'carry_over', 'total_owed',
-            'status', 'is_paid', 'paid_at', 'note', 'created_at',
+            'status', 'is_paid', 'paid_at',
         )
-        read_only_fields = ('id', 'company', 'created_at')
+        read_only_fields = ('id',)
 
-    def get_students_count(self, obj):
+    def get_group_id(self, obj):
+        return str(obj.group.id) if obj.group else None
+
+    def get_group_name(self, obj):
+        return obj.group.name if obj.group else None
+
+    def get_course_name(self, obj):
+        return obj.group.course.name if obj.group and obj.group.course else None
+
+    def get_student_count(self, obj):
         from apps.groups.models import GroupStudent
+        if not obj.group:
+            return 0
         return GroupStudent.objects.filter(
-            group__teacher=obj.teacher,
-            group__status='active',
+            group=obj.group,
             left_at__isnull=True,
             student__status='active',
         ).count()
 
-    def get_total_owed(self, obj):
-        return obj.calculated_amount + self.get_carry_over(obj)
+    def get_course_price(self, obj):
+        if obj.group and obj.group.course:
+            return obj.group.course.price
+        return 0
+
+    def get_first_active_date(self, obj):
+        from apps.groups.models import GroupStudent
+        if not obj.group:
+            return None
+        gs = GroupStudent.objects.filter(
+            group=obj.group,
+            student__status__in=['active', 'archived'],
+        ).order_by('joined_at').first()
+        return gs.joined_at.isoformat() if gs else None
 
     def get_carry_over(self, obj):
         from django.db.models import Sum
         from decimal import Decimal
         result = TeacherSalary.objects.filter(
             teacher=obj.teacher,
+            group=obj.group,
             month__lt=obj.month,
             company=obj.company,
         ).exclude(status='paid').aggregate(
@@ -49,6 +79,9 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         )
         total = (result['total_calc'] or Decimal('0')) - (result['total_paid'] or Decimal('0'))
         return max(total, Decimal('0'))
+
+    def get_total_owed(self, obj):
+        return obj.calculated_amount + self.get_carry_over(obj)
 
 
 class StaffSalarySerializer(serializers.ModelSerializer):
