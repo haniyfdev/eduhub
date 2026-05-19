@@ -79,6 +79,8 @@ def calculate_teacher_salary(teacher, month):
     first_group = True
 
     for group in groups:
+        if not group:
+            continue
         data = calculate_group_salary(teacher, group)
         if data is None:
             continue

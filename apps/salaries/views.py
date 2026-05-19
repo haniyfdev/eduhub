@@ -50,6 +50,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 pass
 
         from django.db.models import Q
+        qs = qs.filter(group__isnull=False)
         qs = qs.filter(
             teacher__status='active',
             teacher__groups__status='active',
