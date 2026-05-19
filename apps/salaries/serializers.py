@@ -35,7 +35,10 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         return str(obj.group.id) if obj.group else None
 
     def get_group_name(self, obj):
-        return obj.group.name if obj.group else None
+        if not obj.group:
+            return None
+        gender = (obj.group.gender_type or '').upper()
+        return f"{obj.group.number}{gender}"
 
     def get_course_name(self, obj):
         return obj.group.course.name if obj.group and obj.group.course else None
@@ -52,7 +55,7 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
 
     def get_course_price(self, obj):
         if obj.group and obj.group.course:
-            return obj.group.course.price
+            return float(obj.group.course.price)
         return 0
 
     def get_first_active_date(self, obj):
@@ -63,7 +66,12 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
             group=obj.group,
             student__status__in=['active', 'archived'],
         ).order_by('joined_at').first()
-        return gs.joined_at.isoformat() if gs else None
+        if not gs:
+            return None
+        dt = gs.joined_at
+        if hasattr(dt, 'date'):
+            return dt.date().isoformat()
+        return str(dt)
 
     def get_carry_over(self, obj):
         from django.db.models import Sum

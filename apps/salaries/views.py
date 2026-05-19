@@ -49,7 +49,14 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             except ValueError:
                 pass
 
-        return qs.filter(teacher__status='active')
+        from django.db.models import Q
+        qs = qs.filter(
+            teacher__status='active',
+            teacher__groups__status='active',
+        ).distinct()
+        return qs.filter(
+            Q(calculated_amount__gt=0) | Q(paid_amount__gt=0)
+        )
 
     def get_permissions(self):
         return [IsAuthenticated()]
