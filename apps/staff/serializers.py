@@ -45,20 +45,16 @@ class StaffCreateSerializer(serializers.ModelSerializer):
 
 
 class StaffSalarySerializer(serializers.ModelSerializer):
-    staff_name      = serializers.CharField(source='staff.full_name', read_only=True)
-    staff_role      = serializers.CharField(source='staff.get_role_display', read_only=True)
-    staff_role_key  = serializers.CharField(source='staff.role', read_only=True)
-    staff_phone     = serializers.CharField(source='staff.phone', read_only=True)
-    contract_type   = serializers.CharField(source='staff.contract_type', read_only=True)
-    total_owed      = serializers.SerializerMethodField()
+    user_name  = serializers.CharField(source='staff.full_name', read_only=True)
+    user_role  = serializers.CharField(source='staff.get_role_display', read_only=True)
+    total_owed = serializers.SerializerMethodField()
 
     class Meta:
         model  = StaffSalary
         fields = (
-            'id', 'staff', 'staff_name', 'staff_role', 'staff_role_key',
-            'staff_phone', 'contract_type', 'company', 'month',
+            'id', 'staff', 'user_name', 'user_role', 'company', 'month',
             'calculated_amount', 'paid_amount', 'carry_over', 'total_owed',
-            'status', 'is_paid', 'paid_at',
+            'due_date', 'status', 'is_paid', 'paid_at', 'note',
         )
         read_only_fields = ('id', 'company')
 

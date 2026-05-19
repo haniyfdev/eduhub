@@ -99,6 +99,7 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                     continue
 
             calculated_amount = staff.salary_amount
+            due_date = (month + relativedelta(months=1)).replace(day=1)
 
             prev_salary = StaffSalary.objects.filter(staff=staff, month=prev_month).first()
             carry_over = Decimal('0')
@@ -113,6 +114,7 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 defaults={
                     'calculated_amount': calculated_amount,
                     'carry_over': carry_over,
+                    'due_date': due_date,
                 },
             )
 
@@ -120,7 +122,8 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 if salary.status != 'paid':
                     salary.calculated_amount = calculated_amount
                     salary.carry_over = carry_over
-                    salary.save(update_fields=['calculated_amount', 'carry_over'])
+                    salary.due_date = due_date
+                    salary.save(update_fields=['calculated_amount', 'carry_over', 'due_date'])
                     created_list.append(staff.full_name)
                 else:
                     skipped_list.append(staff.full_name)

@@ -61,9 +61,11 @@ class StaffSalary(BaseModel):
     calculated_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     paid_amount       = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     carry_over        = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    due_date          = models.DateField(null=True, blank=True)
     status            = models.CharField(max_length=10, choices=SALARY_STATUS_CHOICES, default='unpaid')
     is_paid           = models.BooleanField(default=False)
     paid_at           = models.DateTimeField(null=True, blank=True)
+    note              = models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'staff_member_salaries'
