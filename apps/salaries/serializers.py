@@ -5,8 +5,11 @@ from .models import TeacherSalary, StaffSalary, TeacherWorkLog, StaffKpiRule
 class TeacherSalarySerializer(serializers.ModelSerializer):
     teacher_name    = serializers.CharField(source='teacher.user.get_full_name', read_only=True)
     teacher_subject = serializers.CharField(source='teacher.subject', read_only=True)
-    salary_type     = serializers.CharField(source='teacher.salary_type', read_only=True)
-    students_count  = serializers.SerializerMethodField()
+    salary_type       = serializers.CharField(source='teacher.salary_type', read_only=True)
+    salary_percent    = serializers.DecimalField(source='teacher.salary_percent', max_digits=5, decimal_places=2, read_only=True)
+    fixed_amount      = serializers.DecimalField(source='teacher.fixed_amount', max_digits=15, decimal_places=2, read_only=True)
+    per_student_amt   = serializers.DecimalField(source='teacher.per_student_amt', max_digits=15, decimal_places=2, read_only=True)
+    students_count    = serializers.SerializerMethodField()
     total_owed      = serializers.SerializerMethodField()
     carry_over      = serializers.SerializerMethodField()
 
@@ -14,7 +17,7 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         model = TeacherSalary
         fields = (
             'id', 'company', 'teacher', 'teacher_name', 'teacher_subject',
-            'salary_type', 'students_count', 'month',
+            'salary_type', 'salary_percent', 'fixed_amount', 'per_student_amt', 'students_count', 'month',
             'base_amount', 'kpi_amount', 'total_amount',
             'calculated_amount', 'paid_amount', 'carry_over', 'total_owed',
             'status', 'is_paid', 'paid_at', 'note', 'created_at',
