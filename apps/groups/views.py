@@ -31,7 +31,15 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        return qs.filter(status__in=['active', 'archived', 'frozen']).order_by('course__name', '-created_at')
+        return qs.filter(status__in=['active', 'archived', 'frozen']).annotate(
+            status_order=Case(
+                When(status='active', then=1),
+                When(status='frozen', then=2),
+                When(status='archived', then=3),
+                default=4,
+                output_field=IntegerField(),
+            )
+        ).order_by('status_order', 'course__name', '-created_at')
 
     def get_permissions(self):
         return [IsAuthenticated()]
