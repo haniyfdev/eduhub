@@ -213,7 +213,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         salary.save()
 
         teacher_name = salary.teacher.user.get_full_name()
-        group_label  = f' ({salary.group.name})' if salary.group else ''
+        group_label  = f' ({salary.group.number}{(salary.group.gender_type or "").upper()})' if salary.group else ''
         Expense.objects.create(
             company=salary.company,
             category='teacher_salary',
@@ -318,7 +318,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             salary.save()
 
             teacher_name = salary.teacher.user.get_full_name()
-            group_label  = f' ({salary.group.name})' if salary.group else ''
+            group_label  = f' ({salary.group.number}{(salary.group.gender_type or "").upper()})' if salary.group else ''
             Expense.objects.create(
                 company=salary.company,
                 category='teacher_salary',
