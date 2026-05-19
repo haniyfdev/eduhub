@@ -30,6 +30,7 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
             group__teacher=obj.teacher,
             group__status='active',
             left_at__isnull=True,
+            student__status='active',
         ).count()
 
     def get_total_owed(self, obj):

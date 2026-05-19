@@ -15,6 +15,7 @@ def calculate_teacher_salary(teacher, month):
             group__teacher=teacher,
             group__status='active',
             left_at__isnull=True,
+            student__status='active',
         ).select_related('group__course')
         total_course_revenue_due = sum(gs.group.course.price for gs in enrollments)
         base_amount = total_course_revenue_due * (teacher.salary_percent / 100)
@@ -24,6 +25,7 @@ def calculate_teacher_salary(teacher, month):
             group__teacher=teacher,
             group__status='active',
             left_at__isnull=True,
+            student__status='active',
         ).count()
         base_amount = Decimal(student_count) * (teacher.per_student_amt or Decimal('0'))
 

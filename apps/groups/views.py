@@ -107,17 +107,22 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         serializer.save()
 
     def retrieve(self, request, *args, **kwargs):
-        """Detail: include current student list."""
+        """Detail: include all memberships — active first, then departed."""
         from apps.students.serializers import StudentSerializer
         group = self.get_object()
         data = GroupSerializer(group).data
-        active_members = GroupStudent.objects.filter(
-            group=group, left_at__isnull=True,
-            student__status__in=['active', 'trial', 'frozen'],
-        ).select_related('student')
-        data['students'] = StudentSerializer(
-            [m.student for m in active_members], many=True
-        ).data
+        all_members = GroupStudent.objects.filter(
+            group=group,
+        ).select_related('student').order_by(
+            Case(When(left_at__isnull=True, then=0), default=1, output_field=IntegerField()),
+            'joined_at',
+        )
+        students_data = []
+        for m in all_members:
+            s_data = StudentSerializer(m.student).data
+            s_data['left_at'] = m.left_at.isoformat() if m.left_at else None
+            students_data.append(s_data)
+        data['students'] = students_data
         return Response(data)
 
     @action(detail=True, methods=['post'], url_path='add-student')

@@ -100,6 +100,9 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             student.archived_at = timezone.now()
             student.save(update_fields=['status', 'archive_reason', 'archived_at'])
 
+            from apps.groups.models import GroupStudent
+            GroupStudent.objects.filter(student=student, left_at__isnull=True).update(left_at=timezone.now())
+
             if student.lead_id:
                 if reason == 'dropped_out':
                     Lead.objects.filter(id=student.lead_id).update(status='ignored')
