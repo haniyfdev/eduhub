@@ -31,20 +31,22 @@ def _parse_date_range(request):
 
 
 def _salary_totals(cf, from_date, to_date):
-    """Return (teacher_sal, staff_sal, teacher_qs, staff_qs) for the given period."""
+    """Return (teacher_sal, staff_sal, teacher_qs, staff_qs) using PAID amounts only."""
     month_from = from_date.replace(day=1)
 
     teacher_qs = TeacherSalary.objects.filter(
         **cf,
         month__gte=month_from,
         month__lte=to_date,
+        paid_amount__gt=0,
     )
-    teacher_sal = teacher_qs.aggregate(t=Sum('calculated_amount'))['t'] or Decimal('0')
+    teacher_sal = teacher_qs.aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
 
     staff_qs = StaffSalary.objects.filter(
         **cf,
         month__gte=month_from,
         month__lte=to_date,
+        paid_at__isnull=False,
     )
     agg = staff_qs.aggregate(base=Sum('amount'), kpi=Sum('kpi_amount'))
     staff_sal = (agg['base'] or Decimal('0')) + (agg['kpi'] or Decimal('0'))
@@ -188,11 +190,11 @@ class ProfitLossHistoryView(APIView):
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
             teacher_m = TeacherSalary.objects.filter(
-                **cf, month=current,
-            ).aggregate(t=Sum('calculated_amount'))['t'] or Decimal('0')
+                **cf, month=current, paid_amount__gt=0,
+            ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
 
             staff_agg = StaffSalary.objects.filter(
-                **cf, month=current,
+                **cf, month=current, paid_at__isnull=False,
             ).aggregate(base=Sum('amount'), kpi=Sum('kpi_amount'))
             staff_m = (staff_agg['base'] or Decimal('0')) + (staff_agg['kpi'] or Decimal('0'))
 
