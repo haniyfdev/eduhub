@@ -31,19 +31,15 @@ def _parse_date_range(request):
     return from_date, to_date
 
 
-def _salary_totals(cf, from_date, to_date):
-    """Return combined maoshlar total using paid_amount from both salary models."""
+def _salary_totals(cf):
+    """Return combined maoshlar total — all paid_amount > 0 regardless of paid_at date."""
     teacher_paid = TeacherSalary.objects.filter(
         **cf,
-        paid_at__date__gte=from_date,
-        paid_at__date__lte=to_date,
         paid_amount__gt=0,
     ).aggregate(total=Sum('paid_amount'))['total'] or Decimal('0')
 
     staff_paid = StaffMemberSalary.objects.filter(
         **cf,
-        paid_at__date__gte=from_date,
-        paid_at__date__lte=to_date,
         paid_amount__gt=0,
     ).aggregate(total=Sum('paid_amount'))['total'] or Decimal('0')
 
@@ -77,7 +73,7 @@ class ProfitLossView(APIView):
                 **cf, paid_at__date__gte=from_date, paid_at__date__lte=to_date
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            maoshlar = _salary_totals(cf, from_date, to_date)
+            maoshlar = _salary_totals(cf)
 
             # Manual expenses only (exclude auto-mirrored salary rows)
             manual_qs = Expense.objects.filter(
