@@ -10,7 +10,8 @@ import traceback
 from utils.permissions import IsSuperAdminOrBossOrManager
 from apps.payments.models import Payment
 from apps.teachers.models import Teacher
-from apps.salaries.models import TeacherSalary, StaffSalary
+from apps.salaries.models import TeacherSalary
+from apps.staff.models import StaffSalary as StaffMemberSalary
 from .models import Expense
 
 
@@ -31,27 +32,22 @@ def _parse_date_range(request):
 
 
 def _salary_totals(cf, from_date, to_date):
-    """Return (teacher_sal, staff_sal, teacher_qs, staff_qs) using PAID amounts only."""
-    month_from = from_date.replace(day=1)
-
-    teacher_qs = TeacherSalary.objects.filter(
+    """Return combined maoshlar total using paid_amount from both salary models."""
+    teacher_paid = TeacherSalary.objects.filter(
         **cf,
-        month__gte=month_from,
-        month__lte=to_date,
+        paid_at__date__gte=from_date,
+        paid_at__date__lte=to_date,
         paid_amount__gt=0,
-    )
-    teacher_sal = teacher_qs.aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
+    ).aggregate(total=Sum('paid_amount'))['total'] or Decimal('0')
 
-    staff_qs = StaffSalary.objects.filter(
+    staff_paid = StaffMemberSalary.objects.filter(
         **cf,
-        month__gte=month_from,
-        month__lte=to_date,
-        paid_at__isnull=False,
-    )
-    agg = staff_qs.aggregate(base=Sum('amount'), kpi=Sum('kpi_amount'))
-    staff_sal = (agg['base'] or Decimal('0')) + (agg['kpi'] or Decimal('0'))
+        paid_at__date__gte=from_date,
+        paid_at__date__lte=to_date,
+        paid_amount__gt=0,
+    ).aggregate(total=Sum('paid_amount'))['total'] or Decimal('0')
 
-    return teacher_sal, staff_sal, teacher_qs, staff_qs
+    return teacher_paid + staff_paid
 
 
 def _manual_totals(manual_qs):
@@ -81,7 +77,7 @@ class ProfitLossView(APIView):
                 **cf, paid_at__date__gte=from_date, paid_at__date__lte=to_date
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            teacher_sal, staff_sal, teacher_qs, staff_qs = _salary_totals(cf, from_date, to_date)
+            maoshlar = _salary_totals(cf, from_date, to_date)
 
             # Manual expenses only (exclude auto-mirrored salary rows)
             manual_qs = Expense.objects.filter(
@@ -91,29 +87,18 @@ class ProfitLossView(APIView):
             ).exclude(category__in=['teacher_salary', 'staff_salary'])
 
             cats = _manual_totals(manual_qs)
-            total_expense = teacher_sal + staff_sal + sum(cats.values())
+            total_expense = maoshlar + sum(cats.values())
             net_profit    = total_income - total_expense
 
             # Build breakdown list for the expenses table
             breakdown = []
-            if teacher_sal > 0:
-                first_month = teacher_qs.order_by('month').values_list('month', flat=True).first()
+            if maoshlar > 0:
                 breakdown.append({
                     'id': None,
-                    'category': 'teacher_salary',
-                    'amount': teacher_sal,
-                    'date': str(first_month) if first_month else None,
-                    'note': "O'qituvchilar maoshi",
-                    'source': 'auto',
-                })
-            if staff_sal > 0:
-                first_month = staff_qs.order_by('month').values_list('month', flat=True).first()
-                breakdown.append({
-                    'id': None,
-                    'category': 'staff_salary',
-                    'amount': staff_sal,
-                    'date': str(first_month) if first_month else None,
-                    'note': "Xodimlar maoshi",
+                    'category': 'maoshlar',
+                    'amount': maoshlar,
+                    'date': str(from_date),
+                    'note': 'Maoshlar',
                     'source': 'auto',
                 })
             for exp in manual_qs.order_by('-expense_date'):
@@ -147,16 +132,15 @@ class ProfitLossView(APIView):
                 'to_date':   str(to_date),
                 'income':   {'total': total_income},
                 'expenses': {
-                    'total':            total_expense,
-                    'teacher_salaries': teacher_sal,
-                    'staff_salaries':   staff_sal,
-                    'rent':             cats['rent'],
-                    'utility':          cats['utility'],
-                    'tax':              cats['tax'],
-                    'fine':             cats['fine'],
-                    'discount':         cats['discount'],
-                    'other':            cats['other'],
-                    'breakdown':        breakdown,
+                    'total':    total_expense,
+                    'maoshlar': maoshlar,
+                    'rent':     cats['rent'],
+                    'utility':  cats['utility'],
+                    'tax':      cats['tax'],
+                    'fine':     cats['fine'],
+                    'discount': cats['discount'],
+                    'other':    cats['other'],
+                    'breakdown': breakdown,
                 },
                 'net_profit':         net_profit,
                 'net_profit_percent': float(net_profit   / total_income * 100) if total_income else 0,
@@ -190,13 +174,18 @@ class ProfitLossHistoryView(APIView):
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
             teacher_m = TeacherSalary.objects.filter(
-                **cf, month=current, paid_amount__gt=0,
+                **cf,
+                paid_at__date__gte=month_from,
+                paid_at__date__lte=month_to,
+                paid_amount__gt=0,
             ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
 
-            staff_agg = StaffSalary.objects.filter(
-                **cf, month=current, paid_at__isnull=False,
-            ).aggregate(base=Sum('amount'), kpi=Sum('kpi_amount'))
-            staff_m = (staff_agg['base'] or Decimal('0')) + (staff_agg['kpi'] or Decimal('0'))
+            staff_m = StaffMemberSalary.objects.filter(
+                **cf,
+                paid_at__date__gte=month_from,
+                paid_at__date__lte=month_to,
+                paid_amount__gt=0,
+            ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
 
             manual_m = Expense.objects.filter(
                 **cf,
