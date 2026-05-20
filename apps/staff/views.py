@@ -90,14 +90,6 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         created_list, skipped_list = [], []
 
         for staff in active_staff:
-            if staff.contract_type == 'contract':
-                if staff.contract_end and month > staff.contract_end:
-                    skipped_list.append(staff.full_name)
-                    continue
-                if staff.contract_start and month < staff.contract_start:
-                    skipped_list.append(staff.full_name)
-                    continue
-
             calculated_amount = staff.salary_amount
             due_date = (month + relativedelta(months=1)).replace(day=1)
 
