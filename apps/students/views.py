@@ -281,4 +281,9 @@ class ArchiveStudentsView(APIView):
                     'reason_display': 'Rad etdi',
                 })
 
-        return Response(results)
+        from rest_framework.pagination import PageNumberPagination
+        paginator = PageNumberPagination()
+        paginator.page_size = 25
+        paginator.page_size_query_param = 'page_size'
+        paginated = paginator.paginate_queryset(results, request)
+        return paginator.get_paginated_response(paginated)
