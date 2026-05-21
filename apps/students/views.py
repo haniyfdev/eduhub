@@ -195,6 +195,15 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+from rest_framework.pagination import PageNumberPagination
+
+
+class _ArchivePagination(PageNumberPagination):
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class ArchiveStudentsView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -281,9 +290,6 @@ class ArchiveStudentsView(APIView):
                     'reason_display': 'Rad etdi',
                 })
 
-        from rest_framework.pagination import PageNumberPagination
-        paginator = PageNumberPagination()
-        paginator.page_size = 25
-        paginator.page_size_query_param = 'page_size'
-        paginated = paginator.paginate_queryset(results, request)
-        return paginator.get_paginated_response(paginated)
+        paginator = _ArchivePagination()
+        page = paginator.paginate_queryset(results, request)
+        return paginator.get_paginated_response(page)
