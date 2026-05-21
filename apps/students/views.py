@@ -111,7 +111,18 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 Student.objects.filter(id=student.id).update(lead=None)
 
         return Response({'status': 'archived', 'reason': reason, 'student_id': str(student.id)})
- 
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        student = self.get_object()
+        if student.status != 'archived':
+            return Response({'error': 'Only archived students can be restored'}, status=400)
+        student.status = 'active'
+        student.archive_reason = None
+        student.archived_at = None
+        student.save(update_fields=['status', 'archive_reason', 'archived_at'])
+        return Response({'status': 'active', 'student_id': str(student.id)})
+
     @action(detail=True, methods=['get'])
     def payments(self, request, pk=None):
         from apps.payments.models import Payment

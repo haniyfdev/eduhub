@@ -86,3 +86,17 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         teacher.user.save()
         teacher.save()
         return Response({'status': 'archived'})
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        teacher = self.get_object()
+        if teacher.status != 'archived':
+            return Response({'error': 'Only archived teachers can be restored'}, status=400)
+        teacher.status = 'active'
+        teacher.archived_at = None
+        teacher.user.status = 'active'
+        teacher.user.is_active = True
+        teacher.user.closed_at = None
+        teacher.user.save()
+        teacher.save()
+        return Response({'status': 'active'})

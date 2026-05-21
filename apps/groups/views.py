@@ -262,3 +262,13 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 gs.student.status = 'active'
                 gs.student.save(update_fields=['status'])
         return Response({'status': 'active'})
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        group = self.get_object()
+        if group.status != 'archived':
+            return Response({'error': 'Only archived groups can be restored'}, status=400)
+        group.status = 'active'
+        group.archived_at = None
+        group.save(update_fields=['status', 'archived_at'])
+        return Response({'status': 'active'})
