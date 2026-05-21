@@ -162,6 +162,54 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
 
         return Response({'month': month.strftime('%Y-%m'), 'created': created_count})
 
+    @action(detail=False, methods=['get'], url_path='summary')
+    def summary(self, request):
+        """GET /api/v1/teacher-salaries/summary/?month=YYYY-MM"""
+        from django.db.models import Sum
+        from apps.staff.models import StaffSalary as StaffMemberSalary
+
+        company = request.user.company
+        month   = request.query_params.get('month')
+
+        ts_qs = TeacherSalary.objects.filter(company=company)
+        ss_qs = StaffMemberSalary.objects.filter(company=company)
+
+        if month:
+            try:
+                year, mon = month.split('-')
+                ts_qs = ts_qs.filter(month__year=int(year), month__month=int(mon))
+                ss_qs = ss_qs.filter(month__year=int(year), month__month=int(mon))
+            except ValueError:
+                pass
+
+        t_agg = ts_qs.aggregate(
+            calculated=Sum('calculated_amount'),
+            paid=Sum('paid_amount'),
+            carry=Sum('carry_over'),
+        )
+        t_calculated = float(t_agg['calculated'] or 0)
+        t_paid       = float(t_agg['paid']       or 0)
+        t_carry      = float(t_agg['carry']      or 0)
+        t_remaining  = max(t_calculated + t_carry - t_paid, 0)
+
+        s_agg = ss_qs.aggregate(
+            calculated=Sum('calculated_amount'),
+            paid=Sum('paid_amount'),
+            carry=Sum('carry_over'),
+        )
+        s_calculated = float(s_agg['calculated'] or 0)
+        s_paid       = float(s_agg['paid']       or 0)
+        s_carry      = float(s_agg['carry']      or 0)
+        s_remaining  = max(s_calculated + s_carry - s_paid, 0)
+
+        return Response({
+            'total_calculated': t_calculated + s_calculated,
+            'total_paid':       t_paid + s_paid,
+            'total_remaining':  t_remaining + s_remaining,
+            'teacher': {'calculated': t_calculated, 'paid': t_paid, 'remaining': t_remaining},
+            'staff':   {'calculated': s_calculated, 'paid': s_paid, 'remaining': s_remaining},
+        })
+
     @action(detail=True, methods=['post'], url_path='pay')
     def pay(self, request, pk=None):
         """POST /api/v1/teacher-salaries/{id}/pay/  body: {amount}"""
