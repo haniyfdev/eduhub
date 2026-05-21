@@ -12,15 +12,8 @@ class NotificationSerializer(serializers.ModelSerializer):
 class SmsTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SmsTemplate
-        fields = ('id', 'company', 'name', 'body', 'type', 'created_at')
-        read_only_fields = ('id', 'company', 'created_at')
-
-
-class SmsTemplateCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SmsTemplate
-        fields = ('id', 'name', 'body', 'type')
-        read_only_fields = ('id',)
+        fields = ('id', 'name', 'body', 'trigger', 'is_active', 'is_default', 'created_at')
+        read_only_fields = ('id', 'is_default', 'created_at')
 
 
 class AnnouncementSerializer(serializers.ModelSerializer):

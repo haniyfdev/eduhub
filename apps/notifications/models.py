@@ -29,17 +29,21 @@ class Notification(BaseModel):
 
 
 class SmsTemplate(BaseModel):
-    TYPE_CHOICES = [
-        ('debt', 'Debt'),
-        ('welcome', 'Welcome'),
-        ('reminder', 'Reminder'),
-        ('custom', 'Custom'),
+    TRIGGER_CHOICES = [
+        ('debt_reminder', 'Qarzdorlik eslatmasi'),
+        ('payment_confirmed', "To'lov tasdiqi"),
+        ('lesson_reminder', 'Dars eslatmasi'),
+        ('course_started', 'Kurs boshlanishi'),
+        ('overdue_debt', "Muddati o'tgan qarz"),
+        ('custom', 'Boshqa'),
     ]
 
     company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='sms_templates')
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=100)
     body = models.TextField()
-    type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    trigger = models.CharField(max_length=30, choices=TRIGGER_CHOICES, default='custom')
+    is_active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

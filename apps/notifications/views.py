@@ -5,9 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from utils.mixins import CompanyFilterMixin
-from utils.permissions import IsBossOrManager
 from .models import Announcement, AnnouncementRead, Notification, SmsTemplate
-from .serializers import AnnouncementSerializer, NotificationSerializer, SmsTemplateSerializer, SmsTemplateCreateSerializer
+from .serializers import AnnouncementSerializer, NotificationSerializer, SmsTemplateSerializer
 
 
 class NotificationViewSet(CompanyFilterMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -22,22 +21,17 @@ class NotificationViewSet(CompanyFilterMixin, mixins.ListModelMixin, viewsets.Ge
 
 
 class SmsTemplateViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
-    """
-    GET/POST/PATCH/DELETE on /api/v1/sms-templates/
-    Rule 1 exception: SmsTemplate CAN be deleted.
-    """
-    queryset = SmsTemplate.objects.order_by('name')
+    """Rule 1 exception: SmsTemplate CAN be deleted."""
+    queryset = SmsTemplate.objects.all()
+    serializer_class = SmsTemplateSerializer
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [IsBossOrManager()]
         return [IsAuthenticated()]
 
-    def get_serializer_class(self):
-        if self.action == 'create':
-            return SmsTemplateCreateSerializer
-        return SmsTemplateSerializer
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.filter(is_active=True).order_by('-is_default', 'name')
 
     def perform_create(self, serializer):
         serializer.save(company=self.request.user.company)
