@@ -48,9 +48,12 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        user = self.request.user
+        if user.role == 'teacher':
+            return Announcement.objects.none()
         return Announcement.objects.filter(
             is_active=True
-        ).prefetch_related('reads')
+        ).prefetch_related('reads').order_by('-created_at')
 
     def perform_create(self, serializer):
         if self.request.user.role != 'superadmin':
@@ -71,9 +74,12 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def unread_count(self, request):
+        user = request.user
+        if user.role in ['superadmin', 'teacher']:
+            return Response({'unread': 0})
         total = Announcement.objects.filter(is_active=True).count()
         read = AnnouncementRead.objects.filter(
-            user=request.user,
+            user=user,
             announcement__is_active=True
         ).count()
-        return Response({'unread': total - read})
+        return Response({'unread': max(total - read, 0)})
