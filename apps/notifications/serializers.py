@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Notification, SmsTemplate
+from .models import Announcement, Notification, SmsTemplate
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -21,3 +21,24 @@ class SmsTemplateCreateSerializer(serializers.ModelSerializer):
         model = SmsTemplate
         fields = ('id', 'name', 'body', 'type')
         read_only_fields = ('id',)
+
+
+class AnnouncementSerializer(serializers.ModelSerializer):
+    is_read = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(
+        source='created_by.get_full_name', read_only=True
+    )
+
+    class Meta:
+        model = Announcement
+        fields = [
+            'id', 'title', 'body', 'created_by_name',
+            'is_active', 'is_read', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_by_name', 'created_at']
+
+    def get_is_read(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return False
+        return obj.reads.filter(user=request.user).exists()

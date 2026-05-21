@@ -20,6 +20,7 @@ urlpatterns = [
     path('teacher-salaries/', include('apps.salaries.teacher_urls')),
     path('audit-logs/', include('apps.audit.urls')),
     path('notifications/', include('apps.notifications.urls')),
+    path('announcements/', include('apps.notifications.announcement_urls')),
     path('subscriptions/', include('apps.subscriptions.urls')),
     path('dashboard/', include('apps.companies.dashboard_urls')),
     path('profit-loss/', include('apps.expenses.pl_urls')),

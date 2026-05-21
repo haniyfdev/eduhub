@@ -47,3 +47,37 @@ class SmsTemplate(BaseModel):
 
     def __str__(self):
         return self.name
+
+
+class Announcement(BaseModel):
+    title = models.CharField(max_length=200)
+    body = models.TextField()
+    created_by = models.ForeignKey(
+        'users.User', on_delete=models.CASCADE,
+        related_name='announcements'
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'announcements'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title
+
+
+class AnnouncementRead(BaseModel):
+    announcement = models.ForeignKey(
+        Announcement, on_delete=models.CASCADE,
+        related_name='reads'
+    )
+    user = models.ForeignKey(
+        'users.User', on_delete=models.CASCADE,
+        related_name='announcement_reads'
+    )
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'announcement_reads'
+        unique_together = ['announcement', 'user']

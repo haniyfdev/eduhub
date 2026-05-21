@@ -1,10 +1,13 @@
 from rest_framework import viewsets, mixins
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from utils.mixins import CompanyFilterMixin
 from utils.permissions import IsBossOrManager
-from .models import Notification, SmsTemplate
-from .serializers import NotificationSerializer, SmsTemplateSerializer, SmsTemplateCreateSerializer
+from .models import Announcement, AnnouncementRead, Notification, SmsTemplate
+from .serializers import AnnouncementSerializer, NotificationSerializer, SmsTemplateSerializer, SmsTemplateCreateSerializer
 
 
 class NotificationViewSet(CompanyFilterMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -38,3 +41,39 @@ class SmsTemplateViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(company=self.request.user.company)
+
+
+class AnnouncementViewSet(viewsets.ModelViewSet):
+    serializer_class = AnnouncementSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Announcement.objects.filter(
+            is_active=True
+        ).prefetch_related('reads')
+
+    def perform_create(self, serializer):
+        if self.request.user.role != 'superadmin':
+            raise PermissionDenied("Faqat superadmin xabar yoza oladi")
+        serializer.save(created_by=self.request.user)
+
+    def get_permissions(self):
+        return [IsAuthenticated()]
+
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        announcement = self.get_object()
+        AnnouncementRead.objects.get_or_create(
+            announcement=announcement,
+            user=request.user
+        )
+        return Response({'status': 'read'})
+
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        total = Announcement.objects.filter(is_active=True).count()
+        read = AnnouncementRead.objects.filter(
+            user=request.user,
+            announcement__is_active=True
+        ).count()
+        return Response({'unread': total - read})
