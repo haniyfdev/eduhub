@@ -15,7 +15,7 @@ class CourseSerializer(serializers.ModelSerializer):
 
     def get_teacher_names(self, obj):
         return [
-            {'id': str(t.id), 'first_name': t.user.first_name, 'last_name': t.user.last_name}
+            f"{t.user.first_name} {t.user.last_name}".strip()
             for t in obj.teachers.all()
         ]
 

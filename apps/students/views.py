@@ -1,11 +1,12 @@
 
-from django.db.models import Case, When, IntegerField, Prefetch
+from django.db.models import Case, When, IntegerField, Prefetch, Q
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
- 
+from rest_framework.views import APIView
+
 from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from .models import Student
@@ -192,4 +193,92 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(student=student, author=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
- 
+
+
+class ArchiveStudentsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.leads.models import Lead
+        from apps.groups.models import GroupStudent
+
+        company = request.user.company
+        search = request.query_params.get('search', '')
+        reason_filter = request.query_params.get('reason', '')
+
+        results = []
+
+        # 1. Archived students (graduated + dropped_out)
+        if reason_filter in ('', 'graduated', 'dropped_out'):
+            students_qs = Student.objects.filter(
+                company=company,
+                status='archived',
+            ).select_related('course')
+
+            if reason_filter:
+                students_qs = students_qs.filter(archive_reason=reason_filter)
+
+            if search:
+                students_qs = students_qs.filter(
+                    Q(first_name__icontains=search) |
+                    Q(last_name__icontains=search) |
+                    Q(phone__icontains=search)
+                )
+
+            for s in students_qs.order_by('-archived_at'):
+                gs = GroupStudent.objects.filter(
+                    student=s
+                ).order_by('-joined_at').select_related('group').first()
+
+                group_name = '—'
+                if gs and gs.group:
+                    gender = (gs.group.gender_type or '').upper()
+                    group_name = f"{gs.group.number}{gender}"
+
+                results.append({
+                    'id': str(s.id),
+                    'source': 'student',
+                    'first_name': s.first_name,
+                    'last_name': s.last_name,
+                    'phone': s.phone,
+                    'second_phone': s.second_phone,
+                    'course_name': s.course.name if s.course else '—',
+                    'group_name': group_name,
+                    'birth_date': s.birth_date.strftime('%d/%m/%Y') if s.birth_date else '—',
+                    'archive_reason': s.archive_reason,
+                    'archived_at': s.archived_at.strftime('%d/%m/%Y') if s.archived_at else '—',
+                    'reason_display': 'Bitirdi' if s.archive_reason == 'graduated' else 'Tark etdi',
+                })
+
+        # 2. Ignored leads (rad etdi)
+        if reason_filter in ('', 'ignored'):
+            leads_qs = Lead.objects.filter(
+                company=company,
+                status='ignored',
+            ).select_related('course')
+
+            if search:
+                leads_qs = leads_qs.filter(
+                    Q(first_name__icontains=search) |
+                    Q(last_name__icontains=search) |
+                    Q(phone__icontains=search)
+                )
+
+            for lead in leads_qs.order_by('-created_at'):
+                archived_date = lead.archived_at or lead.created_at
+                results.append({
+                    'id': str(lead.id),
+                    'source': 'lead',
+                    'first_name': lead.first_name,
+                    'last_name': lead.last_name,
+                    'phone': lead.phone,
+                    'second_phone': lead.second_phone,
+                    'course_name': lead.course.name if lead.course else '—',
+                    'group_name': '—',
+                    'birth_date': lead.birth_date.strftime('%d/%m/%Y') if lead.birth_date else '—',
+                    'archive_reason': 'ignored',
+                    'archived_at': archived_date.strftime('%d/%m/%Y') if archived_date else '—',
+                    'reason_display': 'Rad etdi',
+                })
+
+        return Response(results)
