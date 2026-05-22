@@ -1,4 +1,4 @@
-from rest_framework import viewsets, mixins
+from rest_framework import status, viewsets, mixins
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
@@ -36,8 +36,14 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
             return SmsTemplate.objects.filter(
                 company__isnull=True
             ).order_by('-is_default', 'name')
+        company = user.company
+        company_names = SmsTemplate.objects.filter(
+            company=company
+        ).values_list('name', flat=True)
         return SmsTemplate.objects.filter(
-            Q(company=user.company) | Q(company__isnull=True, is_default=True)
+            Q(company=company) | Q(company__isnull=True, is_default=True)
+        ).exclude(
+            Q(company__isnull=True) & Q(name__in=company_names)
         ).order_by('-is_default', 'name')
 
     def perform_create(self, serializer):
@@ -46,6 +52,33 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
             serializer.save(company=None, is_default=True)
         else:
             serializer.save(company=user.company, is_default=False)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user
+        if instance.company is None and user.role != 'superadmin':
+            new_template = SmsTemplate.objects.create(
+                company=user.company,
+                name=instance.name,
+                trigger=instance.trigger,
+                body=request.data.get('body', instance.body),
+                is_default=False,
+                is_active=True,
+            )
+            return Response(SmsTemplateSerializer(new_template).data)
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user
+        if instance.company is None and user.role != 'superadmin':
+            return Response(
+                {'error': "Standart shablonni o'chira olmaysiz"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if instance.company and instance.company != user.company:
+            return Response({'error': "Ruxsat yo'q"}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
 
 
 class AnnouncementViewSet(viewsets.ModelViewSet):
