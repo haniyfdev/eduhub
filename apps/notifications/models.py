@@ -38,7 +38,10 @@ class SmsTemplate(BaseModel):
         ('custom', 'Boshqa'),
     ]
 
-    company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='sms_templates')
+    company = models.ForeignKey(
+        'companies.Company', on_delete=models.CASCADE,
+        related_name='sms_templates', null=True, blank=True,
+    )
     name = models.CharField(max_length=100)
     body = models.TextField()
     trigger = models.CharField(max_length=30, choices=TRIGGER_CHOICES, default='custom')

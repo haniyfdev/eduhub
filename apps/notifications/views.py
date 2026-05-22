@@ -20,7 +20,7 @@ class NotificationViewSet(CompanyFilterMixin, mixins.ListModelMixin, viewsets.Ge
         return [IsAuthenticated()]
 
 
-class SmsTemplateViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
+class SmsTemplateViewSet(viewsets.ModelViewSet):
     """Rule 1 exception: SmsTemplate CAN be deleted."""
     queryset = SmsTemplate.objects.all()
     serializer_class = SmsTemplateSerializer
@@ -30,11 +30,22 @@ class SmsTemplateViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        return qs.filter(is_active=True).order_by('-is_default', 'name')
+        from django.db.models import Q
+        user = self.request.user
+        if user.role == 'superadmin':
+            return SmsTemplate.objects.filter(
+                company__isnull=True
+            ).order_by('-is_default', 'name')
+        return SmsTemplate.objects.filter(
+            Q(company=user.company) | Q(company__isnull=True, is_default=True)
+        ).order_by('-is_default', 'name')
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company)
+        user = self.request.user
+        if user.role == 'superadmin':
+            serializer.save(company=None, is_default=True)
+        else:
+            serializer.save(company=user.company, is_default=False)
 
 
 class AnnouncementViewSet(viewsets.ModelViewSet):

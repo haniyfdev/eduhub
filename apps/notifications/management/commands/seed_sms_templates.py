@@ -1,6 +1,5 @@
 from django.core.management.base import BaseCommand
 
-from apps.companies.models import Company
 from apps.notifications.models import SmsTemplate
 
 DEFAULT_TEMPLATES = [
@@ -33,24 +32,32 @@ DEFAULT_TEMPLATES = [
 
 
 class Command(BaseCommand):
-    help = 'Seed default SMS templates for all companies'
+    help = 'Seed global default SMS templates (company=None) and clean up old per-company defaults'
 
     def handle(self, *args, **kwargs):
-        companies = Company.objects.all()
+        # Remove old per-company default templates
+        deleted, _ = SmsTemplate.objects.filter(
+            is_default=True,
+            company__isnull=False,
+        ).delete()
+        if deleted:
+            self.stdout.write(f'{deleted} ta eski shablon o\'chirildi')
+
+        # Create global templates (company=None)
         count = 0
-        for company in companies:
-            for t in DEFAULT_TEMPLATES:
-                obj, created = SmsTemplate.objects.get_or_create(
-                    company=company,
-                    name=t['name'],
-                    is_default=True,
-                    defaults={
-                        'trigger': t['trigger'],
-                        'body': t['body'],
-                        'is_active': True,
-                        'is_default': True,
-                    }
-                )
-                if created:
-                    count += 1
-        self.stdout.write(self.style.SUCCESS(f'{count} ta shablon yaratildi'))
+        for t in DEFAULT_TEMPLATES:
+            obj, created = SmsTemplate.objects.get_or_create(
+                company=None,
+                name=t['name'],
+                is_default=True,
+                defaults={
+                    'trigger': t['trigger'],
+                    'body': t['body'],
+                    'is_active': True,
+                    'is_default': True,
+                },
+            )
+            if created:
+                count += 1
+
+        self.stdout.write(self.style.SUCCESS(f'{count} ta global shablon yaratildi'))
