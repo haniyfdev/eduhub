@@ -1,5 +1,7 @@
 from datetime import datetime, time as dt_time
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -13,10 +15,10 @@ from django.utils import timezone
 
 
 def _lesson_start_dt(lesson):
-    """Return timezone-aware datetime of when the lesson starts (date + group start_time)."""
-    t = lesson.group.start_time or dt_time.min
+    """Return timezone-aware datetime for lesson start (date + group start_time, localised to settings.TIME_ZONE)."""
+    t = lesson.group.start_time or dt_time(0, 0, 0)
     naive = datetime.combine(lesson.date, t)
-    return timezone.make_aware(naive)
+    return naive.replace(tzinfo=ZoneInfo(settings.TIME_ZONE))
 
 
 class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
