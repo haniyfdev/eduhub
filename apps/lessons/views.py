@@ -50,6 +50,30 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
             logger.error(f"Lesson create error: str({e})", exc_info=True)
             raise
 
+    # ── student roster for attendance ────────────────────────────
+
+    @action(detail=True, methods=['get'], url_path='students')
+    def students(self, request, pk=None):
+        from apps.groups.models import GroupStudent
+        lesson = self.get_object()
+        roster = GroupStudent.objects.filter(
+            group=lesson.group,
+            left_at__isnull=True,
+            student__status__in=['active', 'trial']
+        ).select_related('student')
+        data = []
+        for m in roster:
+            s = m.student
+            data.append({
+                'id': str(s.id),
+                'first_name': s.first_name,
+                'last_name': s.last_name,
+                'phone': s.phone or '',
+                'birth_date': s.birth_date.isoformat() if s.birth_date else None,
+                'status': s.status,
+            })
+        return Response(data)
+
     # ── nested attendance ────────────────────────────────────────
 
     @action(detail=True, methods=['get', 'post'])

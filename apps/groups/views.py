@@ -129,6 +129,19 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         for m in all_members:
             s_data = StudentSerializer(m.student).data
             s_data['left_at'] = m.left_at.isoformat() if m.left_at else None
+            if m.left_at is not None:
+                current = GroupStudent.objects.filter(
+                    student=m.student,
+                    left_at__isnull=True,
+                    student__status__in=['active', 'trial']
+                ).select_related('group').first()
+                if current:
+                    gender = (current.group.gender_type or '').upper()
+                    s_data['current_group'] = f"{current.group.number}{gender}"
+                else:
+                    s_data['current_group'] = None
+            else:
+                s_data['current_group'] = None
             students_data.append(s_data)
         data['students'] = students_data
         return Response(data)
