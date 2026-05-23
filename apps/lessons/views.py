@@ -1,8 +1,3 @@
-from datetime import datetime, time as dt_time
-from zoneinfo import ZoneInfo
-
-from django.conf import settings
-from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -13,13 +8,6 @@ from utils.permissions import IsBossOrManager, IsTeacher
 from .models import Lesson
 from .serializers import LessonSerializer, LessonCreateSerializer
 from django.utils import timezone
-
-
-def _lesson_start_dt(lesson):
-    """Return timezone-aware datetime for lesson start (date + group start_time, localised to settings.TIME_ZONE)."""
-    t = lesson.group.start_time or dt_time(0, 0, 0)
-    naive = datetime.combine(lesson.date, t)
-    return naive.replace(tzinfo=ZoneInfo(settings.TIME_ZONE))
 
 
 class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
@@ -68,12 +56,11 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
     def students(self, request, pk=None):
         from apps.groups.models import GroupStudent
         lesson = self.get_object()
-        lesson_start = _lesson_start_dt(lesson)
         roster = GroupStudent.objects.filter(
-            Q(left_at__isnull=True) | Q(left_at__gt=lesson_start),
             group=lesson.group,
+            left_at__isnull=True,
             student__status__in=['active', 'trial'],
-            joined_at__lte=lesson_start
+            joined_at__date__lte=lesson.date
         ).select_related('student')
         data = []
         for m in roster:
@@ -107,12 +94,11 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         items_serializer.is_valid(raise_exception=True)
 
         from apps.groups.models import GroupStudent as _GS
-        lesson_start = _lesson_start_dt(lesson)
         active_count = _GS.objects.filter(
-            Q(left_at__isnull=True) | Q(left_at__gt=lesson_start),
             group=lesson.group,
+            left_at__isnull=True,
             student__status__in=['active', 'trial'],
-            joined_at__lte=lesson_start
+            joined_at__date__lte=lesson.date
         ).count()
         submitted_ids = [item['student_id'] for item in items_serializer.validated_data]
         if len(submitted_ids) < active_count:
