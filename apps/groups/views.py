@@ -1,4 +1,4 @@
-from django.db.models import Case, IntegerField, When
+from django.db.models import Case, IntegerField, Subquery, OuterRef, When
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 
@@ -119,8 +119,14 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         from apps.students.serializers import StudentSerializer
         group = self.get_object()
         data = GroupSerializer(group).data
+        latest_gs_id = GroupStudent.objects.filter(
+            group=group,
+            student=OuterRef('student')
+        ).order_by('-joined_at').values('id')[:1]
+
         all_members = GroupStudent.objects.filter(
             group=group,
+            id__in=Subquery(latest_gs_id)
         ).select_related('student').order_by(
             Case(When(left_at__isnull=True, then=0), default=1, output_field=IntegerField()),
             'joined_at',

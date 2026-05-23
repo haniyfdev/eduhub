@@ -59,7 +59,8 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         roster = GroupStudent.objects.filter(
             group=lesson.group,
             left_at__isnull=True,
-            student__status__in=['active', 'trial']
+            student__status__in=['active', 'trial'],
+            joined_at__lte=lesson.date
         ).select_related('student')
         data = []
         for m in roster:
@@ -91,6 +92,21 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         # POST — bulk create
         items_serializer = AttendanceBulkItemSerializer(data=request.data, many=True)
         items_serializer.is_valid(raise_exception=True)
+
+        from apps.groups.models import GroupStudent as _GS
+        active_count = _GS.objects.filter(
+            group=lesson.group,
+            left_at__isnull=True,
+            student__status__in=['active', 'trial'],
+            joined_at__lte=lesson.date
+        ).count()
+        submitted_ids = [item['student_id'] for item in items_serializer.validated_data]
+        if len(submitted_ids) < active_count:
+            missing = active_count - len(submitted_ids)
+            return Response(
+                {'error': f"{missing} ta o'quvchi belgilanmagan. Barcha {active_count} ta o'quvchini belgilang."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         created = []
         for item in items_serializer.validated_data:
