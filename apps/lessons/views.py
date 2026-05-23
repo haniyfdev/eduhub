@@ -2,6 +2,7 @@ from datetime import datetime, time as dt_time
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -69,8 +70,8 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         lesson = self.get_object()
         lesson_start = _lesson_start_dt(lesson)
         roster = GroupStudent.objects.filter(
+            Q(left_at__isnull=True) | Q(left_at__gt=lesson_start),
             group=lesson.group,
-            left_at__isnull=True,
             student__status__in=['active', 'trial'],
             joined_at__lte=lesson_start
         ).select_related('student')
@@ -108,8 +109,8 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         from apps.groups.models import GroupStudent as _GS
         lesson_start = _lesson_start_dt(lesson)
         active_count = _GS.objects.filter(
+            Q(left_at__isnull=True) | Q(left_at__gt=lesson_start),
             group=lesson.group,
-            left_at__isnull=True,
             student__status__in=['active', 'trial'],
             joined_at__lte=lesson_start
         ).count()
