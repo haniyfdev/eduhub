@@ -95,6 +95,8 @@ def _resolve_variables(body: str, recipient_type: str, recipient_id: str, compan
         'amount': extra_data.get('amount', ''),
         'due_date': extra_data.get('due_date', ''),
         'balance': extra_data.get('amount', ''),
+        'lesson_time': extra_data.get('lesson_time', ''),
+        'room_number': extra_data.get('room_number', ''),
     }
 
     if recipient_type == 'student':
@@ -185,6 +187,8 @@ class SmsSendView(APIView):
                 extra_data={
                     'amount': recipient.get('amount', ''),
                     'due_date': recipient.get('due_date', ''),
+                    'lesson_time': recipient.get('lesson_time', ''),
+                    'room_number': recipient.get('room_number', ''),
                 },
             )
             send_sms_task.delay(
