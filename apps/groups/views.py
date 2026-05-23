@@ -15,7 +15,7 @@ from .serializers import GroupSerializer, GroupCreateSerializer
 
 
 class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
-    queryset = Group.objects.select_related('course', 'teacher__user').annotate(
+    queryset = Group.objects.select_related('course', 'teacher__user', 'room').annotate(
         status_order=Case(
             When(status='active', then=1),
             When(status='frozen', then=2),
@@ -60,7 +60,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         new_days = self._parse_days(schedule)
         candidates = Group.objects.filter(
             company_id=company_id,
-            room=room,
+            room_id=room.id if hasattr(room, 'id') else room,
             status__in=['active', 'frozen'],
         )
         if exclude_id:
@@ -88,7 +88,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         company = self.request.user.company
         data = serializer.validated_data
         conflict = self._get_conflicting_group(
-            room=data.get('room', ''),
+            room=data.get('room'),
             schedule=data.get('schedule', ''),
             start_time=data.get('start_time'),
             end_time=data.get('end_time'),
@@ -96,7 +96,9 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         )
         if conflict:
             raise ValidationError({'room': self._conflict_msg(conflict)})
-        serializer.save(company=company)
+        last = Group.objects.filter(company=company).order_by('-number').first()
+        next_number = (last.number + 1) if last else 1
+        serializer.save(company=company, number=next_number)
 
     def perform_update(self, serializer):
         from rest_framework.exceptions import ValidationError

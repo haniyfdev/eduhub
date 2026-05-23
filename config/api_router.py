@@ -1,5 +1,4 @@
 from django.urls import path, include
-from apps.groups.rooms_view import RoomsView
 from apps.students.views import ArchiveStudentsView
 
 urlpatterns = [
@@ -30,6 +29,6 @@ urlpatterns = [
     path('student-notes/', include('apps.notes.urls')),
     path('leads/', include('apps.leads.urls')),
     path('attendance/', include('apps.attendance.urls')),
-    path('rooms/', RoomsView.as_view(), name='rooms'),
+    path('rooms/', include('apps.rooms.urls')),
     path('archive/students/', ArchiveStudentsView.as_view(), name='archive-students'),
 ]

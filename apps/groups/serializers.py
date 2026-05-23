@@ -2,10 +2,6 @@ from rest_framework import serializers
 from .models import Group, GroupStudent
 
 
-def generate_group_number(company):
-    last = Group.objects.filter(company=company).order_by('-number').first()
-    return (last.number + 1) if last else 1
-
 
 class GroupSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
@@ -14,13 +10,15 @@ class GroupSerializer(serializers.ModelSerializer):
     students_count = serializers.SerializerMethodField()
     start_time = serializers.SerializerMethodField()
     end_time = serializers.SerializerMethodField()
+    room_id = serializers.UUIDField(source='room.id', read_only=True, allow_null=True)
+    room_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Group
         fields = (
             'id', 'name', 'number', 'gender_type', 'course', 'teacher',
-            'students_count', 'schedule', 'room', 'start_time', 'end_time',
-            'status', 'created_at', 'archived_at',
+            'students_count', 'schedule', 'room_id', 'room_name',
+            'start_time', 'end_time', 'status', 'created_at', 'archived_at',
         )
 
     def get_name(self, obj):
@@ -47,6 +45,11 @@ class GroupSerializer(serializers.ModelSerializer):
             }
         return None
 
+    def get_room_name(self, obj):
+        if obj.room_id:
+            return f"Xona {obj.room.name}"
+        return None
+
     def get_students_count(self, obj):
         return obj.memberships.filter(
             left_at__isnull=True,
@@ -57,27 +60,27 @@ class GroupSerializer(serializers.ModelSerializer):
 class GroupCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Group
-        fields = ('id', 'gender_type', 'room', 'schedule', 'start_time', 'end_time')
+        fields = ('id', 'gender_type', 'schedule', 'start_time', 'end_time')
         read_only_fields = ('id',)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         from apps.courses.models import Course
         from apps.teachers.models import Teacher
+        from apps.rooms.models import Room
         self.fields['course_id'] = serializers.PrimaryKeyRelatedField(
             queryset=Course.objects.all(), source='course'
         )
         self.fields['teacher_id'] = serializers.PrimaryKeyRelatedField(
             queryset=Teacher.objects.all(), source='teacher'
         )
+        self.fields['room_id'] = serializers.PrimaryKeyRelatedField(
+            queryset=Room.objects.all(), source='room',
+            allow_null=True, required=False,
+        )
 
     def validate_gender_type(self, value):
         return value
-
-    def create(self, validated_data):
-        company = validated_data['company']
-        number = generate_group_number(company)
-        return Group.objects.create(number=number, **validated_data)
 
 
 class GroupStudentHistorySerializer(serializers.ModelSerializer):

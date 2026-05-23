@@ -50,6 +50,7 @@ LOCAL_APPS = [
     'apps.superadmin_panel',
     'apps.leads',
     'apps.staff',
+    'apps.rooms',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
