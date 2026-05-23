@@ -137,6 +137,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         students_data = []
         for m in all_members:
             s_data = StudentSerializer(m.student).data
+            s_data['joined_at'] = m.joined_at.isoformat() if m.joined_at else None
             s_data['left_at'] = m.left_at.isoformat() if m.left_at else None
             if m.left_at is not None:
                 current = GroupStudent.objects.filter(
