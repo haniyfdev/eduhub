@@ -50,15 +50,24 @@ class SmsVariablesView(APIView):
                     course_name = group.course.name
 
             amount = ''
+            balance = ''
             due_date = ''
             try:
+                from django.db.models import Sum
+                from apps.payments.models import Payment
+                total_paid = Payment.objects.filter(
+                    student=student,
+                    company=company,
+                ).aggregate(total=Sum('amount'))['total'] or 0
+                amount = str(int(total_paid))
+
                 debt = Debt.objects.filter(
                     student=student,
                     company=company,
                     status__in=('unpaid', 'partial', 'overdue'),
                 ).first()
                 if debt:
-                    amount = str(int(debt.amount))
+                    balance = str(int(debt.amount))
                     due_date = debt.due_date.strftime('%d.%m.%Y') if debt.due_date else ''
             except Exception:
                 pass
@@ -73,6 +82,7 @@ class SmsVariablesView(APIView):
                 'lesson_time': lesson_time,
                 'company_name': student.company.name,
                 'amount': amount,
+                'balance': balance,
                 'due_date': due_date,
             }
 
