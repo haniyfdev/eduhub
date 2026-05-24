@@ -30,5 +30,6 @@ urlpatterns = [
     path('leads/', include('apps.leads.urls')),
     path('attendance/', include('apps.attendance.urls')),
     path('rooms/', include('apps.rooms.urls')),
+    path('', include('apps.sms.urls')),
     path('archive/students/', ArchiveStudentsView.as_view(), name='archive-students'),
 ]

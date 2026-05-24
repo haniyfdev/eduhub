@@ -1,0 +1,79 @@
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+
+class SmsVariablesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.students.models import Student
+        from apps.groups.models import GroupStudent
+        from apps.debts.models import Debt
+
+        student_ids = request.data.get('student_ids', [])
+        company = request.user.company
+
+        students = Student.objects.filter(
+            id__in=student_ids,
+            company=company,
+        ).select_related('course', 'company')
+
+        result = {}
+        for student in students:
+            gs = GroupStudent.objects.filter(
+                student=student,
+                left_at__isnull=True,
+            ).select_related(
+                'group__teacher__user',
+                'group__course',
+                'group__room',
+            ).first()
+
+            teacher_name = ''
+            room_number = ''
+            lesson_time = ''
+            group_name = ''
+            course_name = student.course.name if student.course else ''
+
+            if gs:
+                group = gs.group
+                group_name = f"{group.number}{(group.gender_type or '').upper()}"
+                if group.room:
+                    room_number = str(group.room.name)
+                if group.start_time:
+                    lesson_time = group.start_time.strftime('%H:%M')
+                if group.teacher and group.teacher.user:
+                    u = group.teacher.user
+                    teacher_name = f"{u.first_name} {u.last_name}".strip()
+                if group.course:
+                    course_name = group.course.name
+
+            amount = ''
+            due_date = ''
+            try:
+                debt = Debt.objects.filter(
+                    student=student,
+                    company=company,
+                    status__in=('unpaid', 'partial', 'overdue'),
+                ).first()
+                if debt:
+                    amount = str(int(debt.amount))
+                    due_date = debt.due_date.strftime('%d.%m.%Y') if debt.due_date else ''
+            except Exception:
+                pass
+
+            result[str(student.id)] = {
+                'student_name': f"{student.first_name} {student.last_name}",
+                'phone': student.phone or '',
+                'course_name': course_name,
+                'group_name': group_name,
+                'teacher_name': teacher_name,
+                'room_number': room_number,
+                'lesson_time': lesson_time,
+                'company_name': student.company.name,
+                'amount': amount,
+                'due_date': due_date,
+            }
+
+        return Response(result)
