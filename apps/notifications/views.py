@@ -1,6 +1,9 @@
+import logging
 import re
 
 from rest_framework import status, viewsets, mixins
+
+logger = logging.getLogger(__name__)
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
@@ -170,6 +173,8 @@ def resolve_variables(body: str, recipient_type: str, recipient_id: str, company
                 variables['amount'] = f"{int(debt.amount):,}".replace(',', ' ')
                 if not variables['due_date'] and debt.due_date:
                     variables['due_date'] = debt.due_date.strftime('%d.%m.%Y')
+
+    logger.info("SMS variables: %s", variables)
 
     def replacer(match):
         return str(variables.get(match.group(1), ''))
