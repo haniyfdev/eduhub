@@ -188,11 +188,14 @@ class SmsSendView(APIView):
     def post(self, request):
         from apps.notifications.tasks import send_sms_task
 
-        phone = request.data.get('phone')
+        recipients = request.data.get('recipients', [])
+        template_id = request.data.get('template_id')
         message = request.data.get('message')
+        phone = request.data.get('phone')
+        company = getattr(request.user, 'company', None)
 
-        # Simple mode: pre-resolved message sent directly from frontend
-        if phone and message:
+        # Simple mode: single phone + pre-resolved message, no recipients list
+        if phone and message and not recipients:
             send_sms_task.delay(
                 company_id=str(request.user.company_id),
                 phone=phone,
@@ -200,16 +203,23 @@ class SmsSendView(APIView):
             )
             return Response({'status': 'sent'})
 
-        # Structured mode: resolve variables server-side
-        recipients = request.data.get('recipients', [])
-        template_body = request.data.get('template_body', '')
-        company = getattr(request.user, 'company', None)
-
-        if not recipients or not template_body:
+        # Structured mode: backend resolves variables per recipient
+        if template_id:
+            try:
+                template = SmsTemplate.objects.get(id=template_id)
+                template_body = template.body
+            except SmsTemplate.DoesNotExist:
+                return Response({'error': 'Template not found'}, status=status.HTTP_404_NOT_FOUND)
+        elif message:
+            template_body = message
+        else:
             return Response(
-                {'error': 'phone+message or recipients+template_body required'},
+                {'error': 'template_id or message required'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if not recipients:
+            return Response({'error': 'recipients required'}, status=status.HTTP_400_BAD_REQUEST)
 
         for recipient in recipients:
             r_phone = recipient.get('phone', '')
