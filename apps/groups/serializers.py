@@ -76,7 +76,6 @@ class GroupCreateSerializer(serializers.ModelSerializer):
         )
         self.fields['room_id'] = serializers.PrimaryKeyRelatedField(
             queryset=Room.objects.all(), source='room',
-            allow_null=True, required=False,
         )
 
     def validate_gender_type(self, value):

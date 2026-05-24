@@ -16,8 +16,8 @@ class Group(BaseModel):
     gender_type = models.CharField(max_length=1, choices=GENDER_TYPE_CHOICES, null=True, blank=True)
     room = models.ForeignKey(
         'rooms.Room',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
+        on_delete=models.PROTECT,
+        null=False, blank=False,
         related_name='groups',
     )
     schedule = models.CharField(max_length=200, null=True, blank=True)
