@@ -264,7 +264,7 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         except Exception as e:    
             import traceback
             return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
-            # return Response(result)
+        return Response(result)
 
 from rest_framework.pagination import PageNumberPagination
 
