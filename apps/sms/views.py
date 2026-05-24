@@ -86,4 +86,26 @@ class SmsVariablesView(APIView):
                 'due_date': due_date,
             }
 
+        lead_ids = request.data.get('lead_ids', [])
+        if lead_ids:
+            from apps.leads.models import Lead
+            leads = Lead.objects.filter(
+                id__in=lead_ids,
+                company=company,
+            ).select_related('course', 'company')
+            for lead in leads:
+                result[str(lead.id)] = {
+                    'student_name': f"{lead.first_name} {lead.last_name}",
+                    'phone': lead.phone or '',
+                    'course_name': lead.course.name if lead.course else '',
+                    'group_name': '',
+                    'teacher_name': '',
+                    'room_number': '',
+                    'lesson_time': '',
+                    'company_name': lead.company.name,
+                    'amount': '',
+                    'balance': '',
+                    'due_date': '',
+                }
+
         return Response(result)
