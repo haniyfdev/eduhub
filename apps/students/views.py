@@ -203,66 +203,68 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         """
         from apps.groups.models import GroupStudent
         from apps.debts.models import Debt
+        try: 
+            student_ids = request.data.get('student_ids', [])
+            company = request.user.company
 
-        student_ids = request.data.get('student_ids', [])
-        company = request.user.company
+            students = Student.objects.filter(
+                id__in=student_ids,
+                company=company,
+            ).select_related('course', 'company')
 
-        students = Student.objects.filter(
-            id__in=student_ids,
-            company=company,
-        ).select_related('course', 'company')
+            result = {}
+            for student in students:
+                gs = GroupStudent.objects.filter(
+                    student=student,
+                    left_at__isnull=True,
+                ).select_related(
+                    'group__teacher__user',
+                    'group__course',
+                ).first()
 
-        result = {}
-        for student in students:
-            gs = GroupStudent.objects.filter(
-                student=student,
-                left_at__isnull=True,
-            ).select_related(
-                'group__teacher__user',
-                'group__course',
-            ).first()
+                teacher_name = ''
+                room_number = ''
+                lesson_time = ''
+                group_name = ''
+                course_name = student.course.name if student.course else ''
 
-            teacher_name = ''
-            room_number = ''
-            lesson_time = ''
-            group_name = ''
-            course_name = student.course.name if student.course else ''
+                if gs:
+                    group = gs.group
+                    group_name = group.display_name
+                    room_number = group.room or ''
+                    lesson_time = group.start_time.strftime('%H:%M') if group.start_time else ''
+                    if group.teacher and group.teacher.user:
+                        u = group.teacher.user
+                        teacher_name = f"{u.first_name} {u.last_name}".strip()
+                    if group.course:
+                        course_name = group.course.name
 
-            if gs:
-                group = gs.group
-                group_name = group.display_name
-                room_number = group.room or ''
-                lesson_time = group.start_time.strftime('%H:%M') if group.start_time else ''
-                if group.teacher and group.teacher.user:
-                    u = group.teacher.user
-                    teacher_name = f"{u.first_name} {u.last_name}".strip()
-                if group.course:
-                    course_name = group.course.name
+                amount = ''
+                due_date = ''
+                try:
+                    debt = Debt.objects.get(student=student, company=company)
+                    if debt.status in ('unpaid', 'partial', 'overdue'):
+                        amount = str(int(debt.amount))
+                        due_date = debt.due_date.strftime('%d.%m.%Y') if debt.due_date else ''
+                except Debt.DoesNotExist:
+                    pass
 
-            amount = ''
-            due_date = ''
-            try:
-                debt = Debt.objects.get(student=student, company=company)
-                if debt.status in ('unpaid', 'partial', 'overdue'):
-                    amount = str(int(debt.amount))
-                    due_date = debt.due_date.strftime('%d.%m.%Y') if debt.due_date else ''
-            except Debt.DoesNotExist:
-                pass
-
-            result[str(student.id)] = {
-                'student_name': f"{student.first_name} {student.last_name}",
-                'phone': student.phone or '',
-                'course_name': course_name,
-                'group_name': group_name,
-                'teacher_name': teacher_name,
-                'room_number': room_number,
-                'lesson_time': lesson_time,
-                'company_name': company.name,
-                'amount': amount,
-                'due_date': due_date,
-            }
-
-        return Response(result)
+                result[str(student.id)] = {
+                    'student_name': f"{student.first_name} {student.last_name}",
+                    'phone': student.phone or '',
+                    'course_name': course_name,
+                    'group_name': group_name,
+                    'teacher_name': teacher_name,
+                    'room_number': room_number,
+                    'lesson_time': lesson_time,
+                    'company_name': company.name,
+                    'amount': amount,
+                    'due_date': due_date,
+                }
+        except Exception as e:    
+            import traceback
+            return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+            # return Response(result)
 
 from rest_framework.pagination import PageNumberPagination
 
