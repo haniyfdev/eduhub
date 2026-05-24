@@ -7,6 +7,7 @@ class DebtSerializer(serializers.ModelSerializer):
     student_phone = serializers.SerializerMethodField()
     student_second_phone = serializers.SerializerMethodField()
     student_status = serializers.CharField(source='student.status', read_only=True)
+    paid_amount    = serializers.SerializerMethodField()
     group_name = serializers.SerializerMethodField()
     group_id = serializers.SerializerMethodField()
     course_id = serializers.SerializerMethodField()
@@ -18,7 +19,7 @@ class DebtSerializer(serializers.ModelSerializer):
             'id', 'company', 'student', 'student_name',
             'student_phone', 'student_second_phone', 'student_status',
             'group_name', 'group_id', 'course_id', 'course_name',
-            'amount', 'due_date', 'status', 'updated_at',
+            'amount', 'paid_amount', 'due_date', 'status', 'updated_at',
         )
         read_only_fields = ('id', 'company', 'student', 'updated_at')
 
@@ -62,6 +63,16 @@ class DebtSerializer(serializers.ModelSerializer):
         if m and m.group.course:
             return m.group.course.name
         return None
+    
+    def get_paid_amount(self, obj):
+        from django.db.models import Sum
+        from apps.payments.models import Payment
+        from decimal import Decimal
+        total = Payment.objects.filter(
+            student=obj.student,
+            company=obj.company,
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        return float(total)
 
 
 class DebtUpdateSerializer(serializers.ModelSerializer):
