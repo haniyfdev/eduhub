@@ -94,14 +94,46 @@ class SmsVariablesView(APIView):
                 company=company,
             ).select_related('course', 'company')
             for lead in leads:
+                group_name = ''
+                teacher_name = ''
+                room_number = ''
+                lesson_time = ''
+                course_name = lead.course.name if lead.course else ''
+
+                # trial lead → linked student → group
+                try:
+                    student = lead.student  # OneToOneField reverse
+                    gs = GroupStudent.objects.filter(
+                        student=student,
+                        left_at__isnull=True,
+                    ).select_related(
+                        'group__teacher__user',
+                        'group__course',
+                        'group__room',
+                    ).first()
+                    if gs:
+                        group = gs.group
+                        group_name = f"{group.number}{(group.gender_type or '').upper()}"
+                        if group.room:
+                            room_number = str(group.room.name)
+                        if group.start_time:
+                            lesson_time = group.start_time.strftime('%H:%M')
+                        if group.teacher and group.teacher.user:
+                            u = group.teacher.user
+                            teacher_name = f"{u.first_name} {u.last_name}".strip()
+                        if group.course:
+                            course_name = group.course.name
+                except Exception:
+                    pass
+
                 result[str(lead.id)] = {
                     'student_name': f"{lead.first_name} {lead.last_name}",
                     'phone': lead.phone or '',
-                    'course_name': lead.course.name if lead.course else '',
-                    'group_name': '',
-                    'teacher_name': '',
-                    'room_number': '',
-                    'lesson_time': '',
+                    'course_name': course_name,
+                    'group_name': group_name,
+                    'teacher_name': teacher_name,
+                    'room_number': room_number,
+                    'lesson_time': lesson_time,
                     'company_name': lead.company.name,
                     'amount': '',
                     'balance': '',
