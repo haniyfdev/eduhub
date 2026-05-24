@@ -84,61 +84,92 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-def _resolve_variables(body: str, recipient_type: str, recipient_id: str, company, extra_data: dict) -> str:
+def resolve_variables(body: str, recipient_type: str, recipient_id: str, company, extra_data: dict = None) -> str:
+    extra_data = extra_data or {}
+
     variables = {
         'company_name': company.name if company else '',
         'student_name': '',
-        'course_name': '',
-        'group_name': '',
+        'course_name':  '',
+        'group_name':   '',
         'teacher_name': '',
-        'phone': '',
-        'amount': extra_data.get('amount', ''),
-        'due_date': extra_data.get('due_date', ''),
-        'balance': extra_data.get('amount', ''),
-        'lesson_time': extra_data.get('lesson_time', ''),
-        'room_number': extra_data.get('room_number', ''),
+        'phone':        '',
+        'amount':       extra_data.get('amount', ''),
+        'due_date':     extra_data.get('due_date', ''),
+        'lesson_time':  '',
+        'room_number':  '',
     }
 
-    if recipient_type == 'student':
-        from apps.students.models import Student
-        from apps.groups.models import GroupStudent
-        try:
-            student = Student.objects.select_related('course', 'company').get(id=recipient_id)
-            variables['student_name'] = f"{student.first_name} {student.last_name}"
-            variables['phone'] = student.phone or ''
-            variables['course_name'] = student.course.name if student.course else ''
-            gs = GroupStudent.objects.filter(
-                student=student, left_at__isnull=True
-            ).select_related('group__course', 'group__teacher__user').first()
-            if gs and gs.group:
-                gender = (gs.group.gender_type or '').upper()
-                variables['group_name'] = f"{gs.group.number}{gender}"
-                if gs.group.teacher:
-                    t = gs.group.teacher.user
-                    variables['teacher_name'] = f"{t.first_name} {t.last_name}"
-                if gs.group.course:
-                    variables['course_name'] = gs.group.course.name
-            if not extra_data.get('amount'):
-                from apps.debts.models import Debt
-                debt = Debt.objects.filter(
-                    student=student, status__in=['unpaid', 'partial', 'overdue']
-                ).first()
-                if debt:
-                    variables['amount'] = f"{int(debt.amount):,}".replace(',', ' ')
-                    variables['balance'] = variables['amount']
-                    variables['due_date'] = debt.due_date.strftime('%d.%m.%Y') if debt.due_date else ''
-        except Student.DoesNotExist:
-            pass
+    if recipient_type in ('student', 'lead'):
+        if recipient_type == 'student':
+            from apps.students.models import Student
+            try:
+                student = Student.objects.select_related('course', 'company').get(id=recipient_id)
+                variables['student_name'] = f"{student.first_name} {student.last_name}"
+                variables['phone'] = student.phone or ''
+                variables['course_name'] = student.course.name if student.course else ''
+            except Student.DoesNotExist:
+                return body
 
-    elif recipient_type == 'lead':
-        from apps.leads.models import Lead
-        try:
-            lead = Lead.objects.select_related('course').get(id=recipient_id)
-            variables['student_name'] = f"{lead.first_name} {lead.last_name}"
-            variables['phone'] = lead.phone or ''
-            variables['course_name'] = lead.course.name if lead.course else ''
-        except Lead.DoesNotExist:
-            pass
+        elif recipient_type == 'lead':
+            from apps.leads.models import Lead
+            try:
+                lead = Lead.objects.select_related('course').get(id=recipient_id)
+                variables['student_name'] = f"{lead.first_name} {lead.last_name}"
+                variables['phone'] = lead.phone or ''
+                variables['course_name'] = lead.course.name if lead.course else ''
+            except Lead.DoesNotExist:
+                return body
+
+        from apps.groups.models import GroupStudent
+        gs = GroupStudent.objects.filter(
+            student_id=recipient_id if recipient_type == 'student' else None,
+            left_at__isnull=True,
+        ).select_related(
+            'group__course',
+            'group__teacher__user',
+            'group__room',
+        ).first()
+
+        if recipient_type == 'lead':
+            from apps.leads.models import Lead
+            try:
+                lead = Lead.objects.get(id=recipient_id)
+                gs = GroupStudent.objects.filter(
+                    student__phone=lead.phone,
+                    left_at__isnull=True,
+                ).select_related(
+                    'group__course',
+                    'group__teacher__user',
+                    'group__room',
+                ).first()
+            except Exception:
+                gs = None
+
+        if gs and gs.group:
+            group = gs.group
+            gender = (group.gender_type or '').upper()
+            variables['group_name'] = f"{group.number}{gender}"
+            if group.teacher and group.teacher.user:
+                t = group.teacher.user
+                variables['teacher_name'] = f"{t.first_name} {t.last_name}"
+            if group.course:
+                variables['course_name'] = group.course.name
+            if group.start_time:
+                variables['lesson_time'] = group.start_time.strftime('%H:%M')
+            if group.room:
+                variables['room_number'] = str(group.room.name)
+
+        if not variables['amount'] and recipient_type == 'student':
+            from apps.debts.models import Debt
+            debt = Debt.objects.filter(
+                student_id=recipient_id,
+                status__in=['unpaid', 'partial'],
+            ).first()
+            if debt:
+                variables['amount'] = f"{int(debt.amount):,}".replace(',', ' ')
+                if not variables['due_date'] and debt.due_date:
+                    variables['due_date'] = debt.due_date.strftime('%d.%m.%Y')
 
     def replacer(match):
         return str(variables.get(match.group(1), ''))
@@ -179,17 +210,16 @@ class SmsSendView(APIView):
             r_phone = recipient.get('phone', '')
             if not r_phone:
                 continue
-            resolved = _resolve_variables(
+            extra_data = {
+                'amount':   recipient.get('amount', ''),
+                'due_date': recipient.get('due_date', ''),
+            }
+            resolved = resolve_variables(
                 template_body,
-                recipient_type=recipient.get('type', ''),
-                recipient_id=recipient.get('id', ''),
-                company=company,
-                extra_data={
-                    'amount': recipient.get('amount', ''),
-                    'due_date': recipient.get('due_date', ''),
-                    'lesson_time': recipient.get('lesson_time', ''),
-                    'room_number': recipient.get('room_number', ''),
-                },
+                recipient.get('type', 'student'),
+                recipient.get('id'),
+                company,
+                extra_data=extra_data,
             )
             send_sms_task.delay(
                 company_id=str(request.user.company_id),
