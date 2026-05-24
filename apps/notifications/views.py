@@ -41,7 +41,7 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
         if user.role == 'superadmin':
             return SmsTemplate.objects.filter(
                 company__isnull=True
-            ).order_by('-is_default', 'name')
+            ).order_by('-created_at')
         company = user.company
         company_names = SmsTemplate.objects.filter(
             company=company
@@ -50,7 +50,7 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
             Q(company=company) | Q(company__isnull=True, is_default=True)
         ).exclude(
             Q(company__isnull=True) & Q(name__in=company_names)
-        ).order_by('-is_default', 'name')
+        ).order_by('-created_at')
 
     def perform_create(self, serializer):
         user = self.request.user
