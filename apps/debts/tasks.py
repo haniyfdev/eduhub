@@ -16,7 +16,7 @@ def check_overdue_debts():
 @shared_task
 def assign_monthly_debts(company_id):
     from datetime import timedelta
-    import decimal
+    from decimal import Decimal, ROUND_HALF_UP
     from django.db.models import Q
     from apps.companies.models import Company
     from apps.groups.models import GroupStudent
@@ -54,7 +54,7 @@ def assign_monthly_debts(company_id):
                 lesson__date__gte=billing_start,
                 lesson__date__lte=billing_date,
             ).count()
-            lesson_price = course_price / decimal.Decimal('20')
+            lesson_price = course_price / Decimal('20')
             charge = lesson_price * lessons_attended
         elif billing_type == 'upfront':
             # Only charge students who enrolled in this billing period
@@ -80,12 +80,16 @@ def assign_monthly_debts(company_id):
         else:
             final_price = charge
 
-        debt, _ = Debt.objects.get_or_create(
+        final_price = Decimal(str(final_price)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        if final_price <= 0:
+            continue
+
+        Debt.objects.get_or_create(
             student=enrollment.student,
             company=company,
-            defaults={'amount': decimal.Decimal('0'), 'status': 'unpaid', 'due_date': billing_date},
+            defaults={
+                'amount': final_price,
+                'status': 'unpaid',
+                'due_date': billing_date + timedelta(days=15),
+            },
         )
-        debt.amount += final_price
-        debt.due_date = billing_date + timedelta(days=15)
-        debt.status = 'unpaid'
-        debt.save()
