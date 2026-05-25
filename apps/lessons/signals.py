@@ -75,7 +75,7 @@ def auto_promote_trial_student(sender, instance, created, **kwargs):  # noqa: AR
                     Student.objects.filter(id=student.id).update(lead=None)
                     logger.info(f'Deleted lead for {student.first_name}: {deleted}')
 
-                # 3. Create debt
+                # 3. Create debt (with discount if active)
                 from apps.groups.models import GroupStudent
                 gs = (
                     GroupStudent.objects
@@ -85,11 +85,30 @@ def auto_promote_trial_student(sender, instance, created, **kwargs):  # noqa: AR
                 )
                 if gs and gs.group.course and gs.group.course.price > 0:
                     from apps.debts.models import Debt
+                    from decimal import Decimal
+
+                    course_price = gs.group.course.price
+                    current_month = date.today().replace(day=1)
+                    active_discount = student.discounts.filter(
+                        start_month__lte=current_month,
+                        end_month__gte=current_month,
+                        course=gs.group.course,
+                    ).first() if hasattr(student, 'discounts') else None
+
+                    if active_discount:
+                        discount_amt = Decimal(str(course_price)) * active_discount.percent / 100
+                        final_amount = Decimal(str(course_price)) - discount_amt
+                    else:
+                        discount_amt = Decimal('0')
+                        final_amount = Decimal(str(course_price))
+
                     debt, created_debt = Debt.objects.get_or_create(
                         student=student,
                         company=student.company,
                         defaults={
-                            'amount': gs.group.course.price,
+                            'amount': final_amount,
+                            'discount': active_discount,
+                            'discount_amount': discount_amt,
                             'due_date': date.today() + timedelta(days=15),
                             'status': 'unpaid',
                         },

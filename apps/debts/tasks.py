@@ -17,7 +17,6 @@ def check_overdue_debts():
 def assign_monthly_debts(company_id):
     from datetime import timedelta
     from decimal import Decimal, ROUND_HALF_UP
-    from django.db.models import Q
     from apps.companies.models import Company
     from apps.groups.models import GroupStudent
     from apps.discounts.models import Discount
@@ -65,19 +64,20 @@ def assign_monthly_debts(company_id):
         else:
             charge = course_price
 
-        discount = Discount.objects.filter(
-            company=company,
-            status='active',
-        ).filter(
-            Q(course=enrollment.group.course) | Q(course__isnull=True)
-        ).order_by('-course').first()
+        # Check for active per-student discount
+        current_month = billing_date.replace(day=1)
+        active_discount = Discount.objects.filter(
+            student=enrollment.student,
+            course=enrollment.group.course,
+            start_month__lte=current_month,
+            end_month__gte=current_month,
+        ).first()
 
-        if discount:
-            if discount.type == 'percent':
-                final_price = charge * (1 - discount.value / 100)
-            else:
-                final_price = charge - discount.value
+        if active_discount:
+            discount_amt = charge * active_discount.percent / 100
+            final_price = charge - discount_amt
         else:
+            discount_amt = Decimal('0')
             final_price = charge
 
         final_price = Decimal(str(final_price)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
@@ -89,6 +89,8 @@ def assign_monthly_debts(company_id):
             company=company,
             defaults={
                 'amount': final_price,
+                'discount': active_discount,
+                'discount_amount': discount_amt,
                 'status': 'unpaid',
                 'due_date': billing_date + timedelta(days=15),
             },
