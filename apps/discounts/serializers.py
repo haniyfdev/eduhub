@@ -3,9 +3,10 @@ from .models import Discount
 
 
 class DiscountSerializer(serializers.ModelSerializer):
-    student_name    = serializers.SerializerMethodField()
-    student_phone   = serializers.CharField(source='student.phone', read_only=True)
-    course_name     = serializers.CharField(source='course.name', read_only=True)
+    student_name         = serializers.SerializerMethodField()
+    student_phone        = serializers.CharField(source='student.phone', read_only=True)
+    student_second_phone = serializers.CharField(source='student.second_phone', read_only=True, allow_null=True)
+    course_name          = serializers.CharField(source='course.name', read_only=True)
     course_price    = serializers.DecimalField(source='course.price', max_digits=15, decimal_places=2, read_only=True)
     discount_amount = serializers.SerializerMethodField()
     final_amount    = serializers.SerializerMethodField()
@@ -14,7 +15,7 @@ class DiscountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Discount
         fields = [
-            'id', 'student', 'student_name', 'student_phone',
+            'id', 'student', 'student_name', 'student_phone', 'student_second_phone',
             'course', 'course_name', 'course_price',
             'percent', 'months', 'start_month', 'end_month',
             'discount_amount', 'final_amount',
