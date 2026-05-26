@@ -1,9 +1,9 @@
-
 from django.db.models import Q
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
  
 from utils.mixins import CompanyFilterMixin
 from .models import Debt
@@ -96,3 +96,28 @@ class DebtViewSet(
             notification_type='sms',
         )
         return Response({'status': 'sms queued'})
+
+
+class SchedulerStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, _request):
+        try:
+            from django_apscheduler.models import DjangoJob, DjangoJobExecution
+
+            job = DjangoJob.objects.filter(id='generate_monthly_debts').first()
+            if not job:
+                return Response({'status': 'not_found', 'message': 'Scheduler topilmadi'})
+
+            last_run = DjangoJobExecution.objects.filter(job=job).order_by('-run_time').first()
+
+            return Response({
+                'status': 'running',
+                'job_id': job.id,
+                'next_run': job.next_run_time,
+                'last_run': last_run.run_time if last_run else None,
+                'last_status': last_run.status if last_run else None,
+                'last_duration': last_run.duration if last_run else None,
+            })
+        except Exception as e:
+            return Response({'status': 'error', 'message': str(e)})
