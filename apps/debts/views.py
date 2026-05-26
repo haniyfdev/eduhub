@@ -99,7 +99,7 @@ class DebtViewSet(
 
 
 class SchedulerStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = []
 
     def get(self, _request):
         try:
