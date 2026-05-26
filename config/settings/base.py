@@ -25,6 +25,7 @@ THIRD_PARTY_APPS = [
     'django_filters',
     'corsheaders',
     'django_celery_beat',
+    'django_apscheduler',
 ]
 
 LOCAL_APPS = [
