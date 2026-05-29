@@ -93,20 +93,27 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         items_serializer = AttendanceBulkItemSerializer(data=request.data, many=True)
         items_serializer.is_valid(raise_exception=True)
 
-        from apps.groups.models import GroupStudent as _GS
-        active_count = _GS.objects.filter(
+        from apps.groups.models import GroupStudent
+        required_count = GroupStudent.objects.filter(
             group=lesson.group,
             left_at__isnull=True,
             student__status__in=['active', 'trial'],
             joined_at__date__lte=lesson.date
         ).count()
-        submitted_ids = [item['student_id'] for item in items_serializer.validated_data]
-        if len(submitted_ids) < active_count:
-            missing = active_count - len(submitted_ids)
+        submitted_ids = [str(item['student_id']) for item in items_serializer.validated_data]
+        if len(submitted_ids) < required_count:
+            missing = required_count - len(submitted_ids)
             return Response(
-                {'error': f"{missing} ta o'quvchi belgilanmagan. Barcha {active_count} ta o'quvchini belgilang."},
+                {'error': f"{missing} ta o'quvchi belgilanmagan. Barcha {required_count} ta o'quvchini keldi/kechikdi/kelmadi qilib belgilang."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        valid_statuses = ['present', 'late', 'absent']
+        for item in items_serializer.validated_data:
+            if item['status'] not in valid_statuses:
+                return Response(
+                    {'error': f"Noto'g'ri holat: {item['status']}. Faqat: keldi, kechikdi, kelmadi"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         created = []
         for item in items_serializer.validated_data:
