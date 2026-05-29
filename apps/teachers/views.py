@@ -100,3 +100,59 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         teacher.user.save()
         teacher.save()
         return Response({'status': 'active'})
+
+    @action(detail=False, methods=['get'], url_path='top')
+    def top(self, request):
+        from datetime import timedelta
+        from django.db.models import Count, Q
+        from apps.groups.models import Group, GroupStudent
+        from apps.attendance.models import Attendance
+
+        user = request.user
+        company_filter = {} if user.role == 'superadmin' else {'company_id': user.company_id}
+        thirty_days_ago = timezone.now().date() - timedelta(days=30)
+
+        teachers = Teacher.objects.filter(
+            status='active',
+            **company_filter,
+        ).select_related('user')
+
+        result = []
+        for teacher in teachers:
+            groups = Group.objects.filter(
+                teacher=teacher,
+                status='active',
+                **company_filter,
+            ).select_related('course')
+
+            groups_count = groups.count()
+            if groups_count == 0:
+                continue
+
+            group_names = [g.display_name for g in groups]
+
+            students_count = GroupStudent.objects.filter(
+                group__in=groups,
+                left_at__isnull=True,
+                student__status='active',
+            ).count()
+
+            attendance_qs = Attendance.objects.filter(
+                lesson__group__in=groups,
+                lesson__date__gte=thirty_days_ago,
+            )
+            total_records = attendance_qs.count()
+            present_records = attendance_qs.filter(status__in=['present', 'late']).count()
+            attendance_rate = round(present_records / total_records * 100) if total_records > 0 else 0
+
+            result.append({
+                'id': str(teacher.id),
+                'name': f"{teacher.user.first_name} {teacher.user.last_name}".strip(),
+                'groups_count': groups_count,
+                'group_names': group_names,
+                'students_count': students_count,
+                'attendance_rate': attendance_rate,
+            })
+
+        result.sort(key=lambda x: (-x['students_count'], -x['attendance_rate']))
+        return Response(result[:10])
