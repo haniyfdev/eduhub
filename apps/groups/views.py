@@ -324,8 +324,19 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             'course', 'teacher__user', 'room'
         ).order_by('start_time')
 
+        from apps.lessons.models import Lesson
+
+        today_date = timezone.now().date()
+
         result = []
         for group in qs:
+            today_lesson = Lesson.objects.filter(
+                group=group,
+                date=today_date,
+            ).first()
+
+            lesson_status = today_lesson.status if today_lesson else None
+
             result.append({
                 'id': str(group.id),
                 'display_name': group.display_name,
@@ -339,6 +350,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 'end_time': str(group.end_time)[:5] if group.end_time else '—',
                 'schedule': group.schedule or '—',
                 'students_count': group.memberships.filter(left_at__isnull=True).count(),
+                'lesson_status': lesson_status,
             })
 
         return Response(result)
