@@ -1,4 +1,4 @@
-from django.db.models import Case, IntegerField, When
+from django.db.models import Case, IntegerField, Q, When
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 
@@ -297,3 +297,48 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         group.archived_at = None
         group.save(update_fields=['status', 'archived_at'])
         return Response({'status': 'active'})
+
+    @action(detail=False, methods=['get'], url_path='today')
+    def today(self, request):
+        DAY_MAP = {
+            0: ['Du', 'Dushanba'],
+            1: ['Se', 'Seshanba'],
+            2: ['Ch', 'Cho', 'Chorshanba'],
+            3: ['Pa', 'Payshanba'],
+            4: ['Ju', 'Juma'],
+            5: ['Sh', 'Sha', 'Shanba'],
+            6: ['Ya', 'Yakshanba'],
+        }
+        today_variants = DAY_MAP[timezone.now().weekday()]
+
+        user = request.user
+        qs = Group.objects.filter(status='active')
+        if user.role != 'superadmin':
+            qs = qs.filter(company_id=user.company_id)
+
+        day_filter = Q()
+        for variant in today_variants:
+            day_filter |= Q(schedule__icontains=variant)
+
+        qs = qs.filter(day_filter).select_related(
+            'course', 'teacher__user', 'room'
+        ).order_by('start_time')
+
+        result = []
+        for group in qs:
+            result.append({
+                'id': str(group.id),
+                'display_name': group.display_name,
+                'course_name': group.course.name if group.course else '—',
+                'teacher_name': (
+                    f"{group.teacher.user.first_name} {group.teacher.user.last_name}".strip()
+                    if group.teacher and group.teacher.user else '—'
+                ),
+                'room_name': group.room.name if group.room else '—',
+                'start_time': str(group.start_time)[:5] if group.start_time else '—',
+                'end_time': str(group.end_time)[:5] if group.end_time else '—',
+                'schedule': group.schedule or '—',
+                'students_count': group.memberships.filter(left_at__isnull=True).count(),
+            })
+
+        return Response(result)
