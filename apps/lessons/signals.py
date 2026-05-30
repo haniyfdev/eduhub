@@ -46,7 +46,7 @@ def auto_promote_trial_student(sender, instance, **kwargs):
             from apps.attendance.models import Attendance
             present_count = Attendance.objects.filter(
                 student=student,
-                status='present',
+                status__in=['present', 'late'],
             ).count()
 
             logger.info(f'{student.first_name} present_count={present_count}')
