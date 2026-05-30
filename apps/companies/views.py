@@ -22,7 +22,11 @@ class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_permissions(self):
-        if self.action in ('list', 'create', 'archive'):
+        if self.action == 'list':
+            return [IsSuperAdmin()]
+        if self.action == 'create':
+            return [(IsSuperAdmin | IsBossOrManager)()]
+        if self.action == 'archive':
             return [IsSuperAdmin()]
         if self.action in ('update', 'partial_update'):
             return [(IsSuperAdmin | IsBossOrManager)()]
@@ -36,10 +40,9 @@ class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'superadmin':
-            return Company.objects.all().order_by('created_at')
-        # Boss / manager sees their own company + its branches
-        if user.role in ['boss', 'manager'] and user.company_id:
-            return Company.objects.filter(
+            qs = Company.objects.all().order_by('created_at')
+        elif user.role in ['boss', 'manager'] and user.company_id:
+            qs = Company.objects.filter(
                 id__in=Company.objects.filter(
                     id=user.company_id
                 ).values_list('id', flat=True)
@@ -47,7 +50,22 @@ class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
                     branch_of_id=user.company_id
                 ).values_list('id', flat=True)
             )
-        return Company.objects.filter(id=user.company_id)
+        else:
+            qs = Company.objects.filter(id=user.company_id)
+
+        branch_of = self.request.query_params.get('branch_of')
+        if branch_of:
+            qs = qs.filter(branch_of_id=branch_of)
+
+        return qs
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        branch_of_id = self.request.data.get('branch_of') or None
+        if user.role in ['boss', 'manager'] and branch_of_id is None:
+            # boss creating a branch must link it to their own company
+            branch_of_id = str(user.company_id) if user.company_id else None
+        serializer.save(branch_of_id=branch_of_id)
 
 
 class CompanySettingsViewSet(mixins.RetrieveModelMixin, mixins.UpdateModelMixin,

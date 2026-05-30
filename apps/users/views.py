@@ -32,6 +32,17 @@ class LoginView(APIView):
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
 
+        # Build list of company IDs this user can access
+        accessible_companies = []
+        if user.company_id:
+            accessible_companies.append(str(user.company_id))
+            if user.role in ['boss', 'manager']:
+                from apps.companies.models import Company
+                branch_ids = Company.objects.filter(
+                    branch_of_id=user.company_id
+                ).values_list('id', flat=True)
+                accessible_companies += [str(bid) for bid in branch_ids]
+
         return Response({
             'access': str(refresh.access_token),
             'refresh': str(refresh),
@@ -42,6 +53,7 @@ class LoginView(APIView):
                 'first_name': user.first_name,
                 'last_name': user.last_name,
                 'phone': user.phone,
+                'accessible_companies': accessible_companies,
             },
         }, status=status.HTTP_200_OK)
 
