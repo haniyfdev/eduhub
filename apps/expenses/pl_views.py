@@ -149,57 +149,88 @@ class ProfitLossView(APIView):
 
 
 class ProfitLossHistoryView(APIView):
-    """GET /api/v1/profit-loss/history/?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD"""
+    """GET /api/v1/profit-loss/history/?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD&group_by=day|month"""
     permission_classes = [IsSuperAdminOrBossOrManager]
 
     def get(self, request):
         from_date, to_date = _parse_date_range(request)
         company = request.user.company if request.user.role != 'superadmin' else None
         cf = {} if company is None else {'company': company}
+        group_by = request.query_params.get('group_by', 'month')
 
         results = []
-        current = from_date.replace(day=1)
 
-        while current <= to_date:
-            next_month = current + relativedelta(months=1)
-            month_from = max(from_date, current)
-            month_to   = min(to_date, next_month - timedelta(days=1))
+        if group_by == 'day':
+            current = from_date
+            while current <= to_date:
+                income = Payment.objects.filter(
+                    **cf, paid_at__date=current,
+                ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            income = Payment.objects.filter(
-                **cf, paid_at__date__gte=month_from, paid_at__date__lte=month_to,
-            ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+                teacher_m = TeacherSalary.objects.filter(
+                    **cf, paid_at__date=current, paid_amount__gt=0,
+                ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
 
-            teacher_m = TeacherSalary.objects.filter(
-                **cf,
-                paid_at__date__gte=month_from,
-                paid_at__date__lte=month_to,
-                paid_amount__gt=0,
-            ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
+                staff_m = StaffMemberSalary.objects.filter(
+                    **cf, paid_at__date=current, paid_amount__gt=0,
+                ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
 
-            staff_m = StaffMemberSalary.objects.filter(
-                **cf,
-                paid_at__date__gte=month_from,
-                paid_at__date__lte=month_to,
-                paid_amount__gt=0,
-            ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
+                manual_m = Expense.objects.filter(
+                    **cf, expense_date=current,
+                ).exclude(category__in=['teacher_salary', 'staff_salary']).aggregate(
+                    t=Sum('amount')
+                )['t'] or Decimal('0')
 
-            manual_m = Expense.objects.filter(
-                **cf,
-                expense_date__gte=month_from,
-                expense_date__lte=month_to,
-            ).exclude(category__in=['teacher_salary', 'staff_salary']).aggregate(
-                t=Sum('amount')
-            )['t'] or Decimal('0')
+                expenses = teacher_m + staff_m + manual_m
+                results.append({
+                    'date':     current.strftime('%Y-%m-%d'),
+                    'label':    current.strftime('%d/%m'),
+                    'income':   income,
+                    'expenses': expenses,
+                    'profit':   income - expenses,
+                })
+                current += timedelta(days=1)
+        else:
+            current = from_date.replace(day=1)
+            while current <= to_date:
+                next_month = current + relativedelta(months=1)
+                month_from = max(from_date, current)
+                month_to   = min(to_date, next_month - timedelta(days=1))
 
-            expenses = teacher_m + staff_m + manual_m
+                income = Payment.objects.filter(
+                    **cf, paid_at__date__gte=month_from, paid_at__date__lte=month_to,
+                ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            results.append({
-                'month':    current.strftime('%Y-%m'),
-                'income':   income,
-                'expenses': expenses,
-                'profit':   income - expenses,
-            })
-            current = next_month
+                teacher_m = TeacherSalary.objects.filter(
+                    **cf,
+                    paid_at__date__gte=month_from,
+                    paid_at__date__lte=month_to,
+                    paid_amount__gt=0,
+                ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
+
+                staff_m = StaffMemberSalary.objects.filter(
+                    **cf,
+                    paid_at__date__gte=month_from,
+                    paid_at__date__lte=month_to,
+                    paid_amount__gt=0,
+                ).aggregate(t=Sum('paid_amount'))['t'] or Decimal('0')
+
+                manual_m = Expense.objects.filter(
+                    **cf,
+                    expense_date__gte=month_from,
+                    expense_date__lte=month_to,
+                ).exclude(category__in=['teacher_salary', 'staff_salary']).aggregate(
+                    t=Sum('amount')
+                )['t'] or Decimal('0')
+
+                expenses = teacher_m + staff_m + manual_m
+                results.append({
+                    'month':    current.strftime('%Y-%m'),
+                    'income':   income,
+                    'expenses': expenses,
+                    'profit':   income - expenses,
+                })
+                current = next_month
 
         return Response(results)
 
