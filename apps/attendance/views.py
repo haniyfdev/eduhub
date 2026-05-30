@@ -32,12 +32,16 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
 
         qs = Attendance.objects.filter(
             lesson__group__company=company,
-            note__isnull=False,
-        ).exclude(note='').select_related(
+        ).exclude(
+            note__isnull=True,
+        ).exclude(
+            note__exact='',
+        ).select_related(
             'student',
-            'lesson__group__teacher__user',
+            'lesson',
             'lesson__group',
-        ).order_by('-lesson__date')
+            'lesson__group__teacher__user',
+        ).order_by('-lesson__date', '-id')
 
         if from_date:
             qs = qs.filter(lesson__date__gte=from_date)
@@ -52,8 +56,8 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
             data.append({
                 'id': str(att.id),
                 'student_name': f"{att.student.first_name} {att.student.last_name}",
-                'teacher_name': f"{teacher.user.first_name} {teacher.user.last_name}" if teacher else '—',
-                'group_name': att.lesson.group.name,
+                'teacher_name': f"{teacher.user.first_name} {teacher.user.last_name}" if teacher and teacher.user else '—',
+                'group_name': att.lesson.group.name if att.lesson.group else '—',
                 'note': att.note,
                 'date': att.lesson.date.strftime('%d/%m/%Y'),
                 'status': att.status,
