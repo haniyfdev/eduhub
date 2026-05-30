@@ -25,9 +25,8 @@ def create_teacher_work_log(sender, instance, created, **kwargs):
     )
 
 
-def auto_promote_trial_student(sender, instance, created, **kwargs):  # noqa: ARG001
-    if not created:
-        return
+@receiver(post_save, sender='attendance.Attendance')
+def auto_promote_trial_student(sender, instance, **kwargs):
     if instance.status == 'absent':
         return
 

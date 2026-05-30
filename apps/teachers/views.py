@@ -134,7 +134,6 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             students_count = GroupStudent.objects.filter(
                 group__in=groups,
                 left_at__isnull=True,
-                student__status='active',
             ).count()
 
             attendance_qs = Attendance.objects.filter(
