@@ -57,7 +57,7 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                 'id': str(att.id),
                 'student_name': f"{att.student.first_name} {att.student.last_name}",
                 'teacher_name': f"{teacher.user.first_name} {teacher.user.last_name}" if teacher and teacher.user else '—',
-                'group_name': att.lesson.group.name if att.lesson.group else '—',
+                'group_name': att.lesson.group.display_name if att.lesson.group else '—',
                 'note': att.note,
                 'date': att.lesson.date.strftime('%d/%m/%Y'),
                 'status': att.status,
