@@ -25,9 +25,7 @@ def create_teacher_work_log(sender, instance, created, **kwargs):
     )
 
 
-def auto_promote_trial_student(sender, instance, created, **kwargs):
-    if not created:
-        return
+def auto_promote_trial_student(sender, instance, **kwargs):
     if instance.status != 'present':
         return
 

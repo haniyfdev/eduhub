@@ -117,10 +117,17 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
         created = []
         for item in items_serializer.validated_data:
-            obj, _ = Attendance.objects.update_or_create(
+            obj, created_flag = Attendance.objects.update_or_create(
                 lesson=lesson,
                 student_id=item['student_id'],
                 defaults={'status': item['status'], 'note': item.get('note', '')},
+            )
+            from django.db.models.signals import post_save
+            post_save.send(
+                sender=obj.__class__,
+                instance=obj,
+                created=created_flag,
+                using='default',
             )
             created.append(obj)
 
