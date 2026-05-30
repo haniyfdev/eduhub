@@ -1,4 +1,5 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 from utils.mixins import CompanyFilterMixin
 from utils.permissions import IsBossOrManager
 from .models import Discount
@@ -11,6 +12,10 @@ class DiscountViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
     filterset_fields = ['student', 'course']
 
     def get_permissions(self):
+        user = self.request.user
+        if hasattr(user, 'role') and user.role == 'admin':
+            if self.action in ['list', 'retrieve']:
+                return [IsAuthenticated()]
         return [IsBossOrManager()]
 
     def get_serializer_class(self):

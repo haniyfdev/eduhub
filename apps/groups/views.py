@@ -165,6 +165,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='add-student')
     def add_student(self, request, pk=None):
         """POST /api/v1/groups/{id}/add-student/  body: {student_id}"""
+        if request.user.role == 'teacher':
+            return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
         from apps.students.models import Student
         from apps.leads.models import Lead
         group = self.get_object()
@@ -213,6 +215,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='remove-student')
     def remove_student(self, request, pk=None):
         """POST /api/v1/groups/{id}/remove-student/  body: {student_id}"""
+        if request.user.role == 'teacher':
+            return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
         from apps.students.models import Student
         group = self.get_object()
         student_id = request.data.get('student_id')
