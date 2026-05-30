@@ -52,9 +52,9 @@ def auto_promote_trial_student(sender, instance, **kwargs):
             logger.info(f'{student.first_name} present_count={present_count}')
 
             if present_count >= 2:
-                # 1. Promote to active
-                student.status = 'active'
-                student.save(update_fields=['status'])
+                # 1. Promote to active — use update() to skip pre_save chain
+                #    (student.save() triggers _update_lead which hits a DB check constraint)
+                Student.objects.filter(id=student.id).update(status='active')
                 logger.info(f'Promoted {student.first_name} to active')
 
                 # 2. Delete linked lead

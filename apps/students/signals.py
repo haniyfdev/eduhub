@@ -52,8 +52,8 @@ def _create_debt(student):
 def _update_lead(student):
     try:
         lead = student.lead
-        if lead and lead.status != 'active':
-            lead.status = 'active'
-            lead.save(update_fields=['status'])
+        if lead:
+            lead.delete()
+            Student.objects.filter(id=student.id).update(lead=None)
     except Exception:
         pass
