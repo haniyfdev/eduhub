@@ -42,10 +42,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         ).order_by('status_order', 'course__name', '-created_at')
         user = self.request.user
         if user.role == 'teacher':
-            try:
-                qs = qs.filter(teacher=user.teacher)
-            except Exception:
-                qs = qs.none()
+            qs = qs.filter(teacher__user=user)
         return qs
 
     def get_permissions(self):
@@ -242,6 +239,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='transfer-student')
     def transfer_student(self, request, pk=None):
+        if request.user.role == 'teacher':
+            return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
         """POST /api/v1/groups/{id}/transfer-student/  body: {student_id, new_group_id}"""
         student_id = request.data.get('student_id')
         new_group_id = request.data.get('new_group_id')
@@ -265,6 +264,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def freeze(self, request, pk=None):
+        if request.user.role == 'teacher':
+            return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
         group = self.get_object()
         if group.status != 'active':
             return Response({'detail': 'Only active groups can be frozen.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -281,6 +282,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def unfreeze(self, request, pk=None):
+        if request.user.role == 'teacher':
+            return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
         group = self.get_object()
         if group.status != 'frozen':
             return Response({'detail': 'Group is not frozen.'}, status=status.HTTP_400_BAD_REQUEST)
