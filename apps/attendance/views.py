@@ -23,6 +23,44 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(student_id=student_id)
         return qs
 
+    @action(detail=False, methods=['get'], url_path='notes')
+    def notes(self, request):
+        company = request.user.company
+        from_date = request.query_params.get('from_date')
+        to_date = request.query_params.get('to_date')
+        group_id = request.query_params.get('group')
+
+        qs = Attendance.objects.filter(
+            lesson__group__company=company,
+            note__isnull=False,
+        ).exclude(note='').select_related(
+            'student',
+            'lesson__group__teacher__user',
+            'lesson__group',
+        ).order_by('-lesson__date')
+
+        if from_date:
+            qs = qs.filter(lesson__date__gte=from_date)
+        if to_date:
+            qs = qs.filter(lesson__date__lte=to_date)
+        if group_id:
+            qs = qs.filter(lesson__group_id=group_id)
+
+        data = []
+        for att in qs[:50]:
+            teacher = att.lesson.group.teacher
+            data.append({
+                'id': str(att.id),
+                'student_name': f"{att.student.first_name} {att.student.last_name}",
+                'teacher_name': f"{teacher.user.first_name} {teacher.user.last_name}" if teacher else '—',
+                'group_name': att.lesson.group.name,
+                'note': att.note,
+                'date': att.lesson.date.strftime('%d/%m/%Y'),
+                'status': att.status,
+            })
+
+        return Response(data)
+
     @action(detail=False, methods=['get'], url_path='summary')
     def summary(self, request):
         """

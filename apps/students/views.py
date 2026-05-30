@@ -214,6 +214,8 @@ class ArchiveStudentsView(APIView):
         company = request.user.company
         search = request.query_params.get('search', '')
         reason_filter = request.query_params.get('reason', '')
+        from_date = request.query_params.get('from_date', '')
+        to_date = request.query_params.get('to_date', '')
 
         results = []
 
@@ -226,6 +228,17 @@ class ArchiveStudentsView(APIView):
 
             if reason_filter:
                 students_qs = students_qs.filter(archive_reason=reason_filter)
+
+            if from_date:
+                try:
+                    students_qs = students_qs.filter(archived_at__date__gte=from_date)
+                except (ValueError, AttributeError):
+                    pass
+            if to_date:
+                try:
+                    students_qs = students_qs.filter(archived_at__date__lte=to_date)
+                except (ValueError, AttributeError):
+                    pass
 
             if search:
                 students_qs = students_qs.filter(
