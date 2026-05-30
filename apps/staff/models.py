@@ -1,15 +1,6 @@
 from django.db import models
 from apps.base import BaseModel
 
-ROLE_CHOICES = [
-    ('admin',       'Admin'),
-    ('manager',     'Menejer'),
-    ('accountant',  'Buxgalter'),
-    ('security',    'Qorovul'),
-    ('cleaner',     'Farrosh'),
-    ('supply',      'Zavxoz'),
-    ('other',       'Boshqa'),
-]
 
 STATUS_CHOICES = [
     ('active',   'Faol'),
@@ -18,22 +9,18 @@ STATUS_CHOICES = [
 
 
 class Staff(BaseModel):
-    company        = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='staff_members')
-    first_name     = models.CharField(max_length=100)
-    last_name      = models.CharField(max_length=100)
-    phone          = models.CharField(max_length=20)
-    role           = models.CharField(max_length=20, choices=ROLE_CHOICES)
-    salary_amount  = models.DecimalField(max_digits=12, decimal_places=2)
-    status         = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
-    hired_at       = models.DateField(auto_now_add=True)
-    notes          = models.TextField(null=True, blank=True)
+    company       = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='staff_members')
+    user          = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='staff_profile')
+    salary_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    notes         = models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'staff'
 
     @property
     def full_name(self):
-        return f"{self.first_name} {self.last_name}"
+        return self.user.get_full_name()
 
     def __str__(self):
         return self.full_name
