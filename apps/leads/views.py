@@ -95,24 +95,28 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         company = request.user.company if request.user.role != 'superadmin' else None
         cf = {} if company is None else {'company': company}
 
-        total_leads   = Lead.objects.filter(**cf).count()
+        total_leads    = Lead.objects.filter(**cf).count()
         total_students = Student.objects.filter(**cf).count()
-        grand_total   = total_leads + total_students
+        grand_total    = total_leads + total_students
 
-        active  = Student.objects.filter(**cf, status='active').count()
-        frozen  = Student.objects.filter(**cf, status='frozen').count()
-        pending = Lead.objects.filter(**cf, status='pending').count()
-        ignored = Lead.objects.filter(**cf, status='ignored').count()
+        active   = Student.objects.filter(**cf, status='active').count()
+        trial    = Student.objects.filter(**cf, status='trial').count()
+        frozen   = Student.objects.filter(**cf, status='frozen').count()
+        archived = Student.objects.filter(**cf, status='archived').count()
+        pending  = Lead.objects.filter(**cf, status='pending').count()
+        ignored  = Lead.objects.filter(**cf, status='ignored').count()
 
         def pct(n):
             return round(n / grand_total * 100, 1) if grand_total > 0 else 0
 
         return Response({
             'grand_total': grand_total,
-            'active':  {'count': active,  'percent': pct(active)},
-            'pending': {'count': pending, 'percent': pct(pending)},
-            'frozen':  {'count': frozen,  'percent': pct(frozen)},
-            'ignored': {'count': ignored, 'percent': pct(ignored)},
+            'active':   {'count': active,   'percent': pct(active)},
+            'trial':    {'count': trial,    'percent': pct(trial)},
+            'frozen':   {'count': frozen,   'percent': pct(frozen)},
+            'archived': {'count': archived, 'percent': pct(archived)},
+            'pending':  {'count': pending,  'percent': pct(pending)},
+            'ignored':  {'count': ignored,  'percent': pct(ignored)},
         })
 
     @action(detail=False, methods=['get'], url_path='referral-stats')
