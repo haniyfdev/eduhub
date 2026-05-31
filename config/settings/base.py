@@ -137,6 +137,11 @@ SIMPLE_JWT = {
 
 CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')
 
+from corsheaders.defaults import default_headers
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-active-company',
+]
+
 REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 
 CACHES = {
