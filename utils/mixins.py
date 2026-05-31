@@ -39,9 +39,8 @@ class CompanyFilterMixin:
             from apps.companies.models import Company
             from django.db.models import Q
             allowed = Company.objects.filter(
-                id=active
-            ).filter(
-                Q(id=user.company_id) | Q(branch_of_id=user.company_id)
+                id=active,
+                branch_of_id=user.company_id,
             ).exists()
             if allowed:
                 return active
