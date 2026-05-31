@@ -3,6 +3,19 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 
+def resolve_company_id(request):
+    """Standalone equivalent of CompanyFilterMixin._resolve_company_id() for APIViews."""
+    user = request.user
+    if user.role != 'boss':
+        return user.company_id
+    active = request.headers.get('X-Active-Company')
+    if active and active != str(user.company_id):
+        from apps.companies.models import Company
+        if Company.objects.filter(id=active, branch_of_id=user.company_id).exists():
+            return active
+    return user.company_id
+
+
 class ArchiveMixin:
     """
     Adds a POST /{pk}/archive/ action that sets status='archived' and archived_at=now().

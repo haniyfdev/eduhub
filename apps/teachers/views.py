@@ -39,7 +39,7 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         user = self.request.user
         if user.role == 'superadmin':
             return qs.order_by('status_order', 'user__last_name')
-        return qs.filter(company_id=user.company_id).order_by('status_order', 'user__last_name')
+        return qs.filter(company_id=self._resolve_company_id()).order_by('status_order', 'user__last_name')
 
     def get_permissions(self):
         if self.action in ('create', 'archive'):
@@ -109,7 +109,7 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         from apps.attendance.models import Attendance
 
         user = request.user
-        company_filter = {} if user.role == 'superadmin' else {'company_id': user.company_id}
+        company_filter = {} if user.role == 'superadmin' else {'company_id': self._resolve_company_id()}
         thirty_days_ago = timezone.now().date() - timedelta(days=30)
 
         teachers = Teacher.objects.filter(

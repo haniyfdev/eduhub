@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from django_filters.rest_framework import DjangoFilterBackend
-from utils.mixins import ArchiveMixin, CompanyFilterMixin
+from utils.mixins import ArchiveMixin, CompanyFilterMixin, resolve_company_id
 from .models import Student
 from .serializers import StudentSerializer, StudentCreateSerializer, StudentUpdateSerializer
  
@@ -211,7 +211,9 @@ class ArchiveStudentsView(APIView):
         from apps.leads.models import Lead
         from apps.groups.models import GroupStudent
 
-        company = request.user.company
+        from apps.companies.models import Company
+        active_company_id = resolve_company_id(request)
+        company = Company.objects.get(id=active_company_id)
         search = request.query_params.get('search', '')
         reason_filter = request.query_params.get('reason', '')
         from_date = request.query_params.get('from_date', '')

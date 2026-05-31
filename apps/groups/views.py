@@ -328,7 +328,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         user = request.user
         qs = Group.objects.filter(status='active')
         if user.role != 'superadmin':
-            qs = qs.filter(company_id=user.company_id)
+            qs = qs.filter(company_id=self._resolve_company_id())
 
         day_filter = Q()
         for variant in today_variants:

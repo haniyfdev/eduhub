@@ -31,7 +31,7 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         user = self.request.user
         if user.role == 'superadmin':
             return qs.order_by('status_order', 'created_at')
-        return qs.filter(company_id=user.company_id).order_by('status_order', 'created_at')
+        return qs.filter(company_id=self._resolve_company_id()).order_by('status_order', 'created_at')
 
     def get_permissions(self):
         if self.action in ('promote', 'demote', 'ignore', 'partial_update', 'update', 'create'):

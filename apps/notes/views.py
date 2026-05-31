@@ -1,6 +1,7 @@
 from rest_framework import mixins, viewsets
 from rest_framework.permissions import IsAuthenticated
 
+from utils.mixins import resolve_company_id
 from .models import StudentNote
 from .serializers import StudentNoteSerializer
 
@@ -20,4 +21,4 @@ class StudentNoteViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         qs = StudentNote.objects.select_related('student', 'author').order_by('-created_at')
         if user.role == 'superadmin':
             return qs
-        return qs.filter(student__company_id=user.company_id)
+        return qs.filter(student__company_id=resolve_company_id(self.request))

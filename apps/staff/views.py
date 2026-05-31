@@ -24,7 +24,7 @@ class StaffViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         )
         user = self.request.user
         if user.role != 'superadmin':
-            qs = qs.filter(company_id=user.company_id)
+            qs = qs.filter(company_id=self._resolve_company_id())
         status_param = self.request.query_params.get('status')
         if status_param:
             qs = qs.filter(status=status_param)

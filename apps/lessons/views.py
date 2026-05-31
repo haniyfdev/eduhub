@@ -24,7 +24,7 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
                 return qs.filter(teacher=user.teacher)
             except Exception:
                 return qs.none()
-        return qs.filter(group__company_id=user.company_id)
+        return qs.filter(group__company_id=self._resolve_company_id())
 
     def get_permissions(self):
         return [IsAuthenticated()]

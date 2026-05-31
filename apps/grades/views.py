@@ -1,6 +1,7 @@
 from rest_framework import mixins, viewsets
 from rest_framework.permissions import IsAuthenticated
 
+from utils.mixins import resolve_company_id
 from .models import Grade
 from .serializers import GradeListSerializer
 
@@ -22,4 +23,4 @@ class GradeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         ).order_by('-created_at')
         if user.role == 'superadmin':
             return qs
-        return qs.filter(student__company_id=user.company_id)
+        return qs.filter(student__company_id=resolve_company_id(self.request))

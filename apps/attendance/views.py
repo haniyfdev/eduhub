@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from utils.mixins import resolve_company_id
 from .models import Attendance
 from .serializers import AttendanceSerializer
 
@@ -17,7 +18,7 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         qs = Attendance.objects.select_related('lesson__group__company', 'student')
         if user.role != 'superadmin':
-            qs = qs.filter(lesson__group__company_id=user.company_id)
+            qs = qs.filter(lesson__group__company_id=resolve_company_id(self.request))
         student_id = self.request.query_params.get('student')
         if student_id:
             qs = qs.filter(student_id=student_id)
@@ -25,13 +26,12 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='notes')
     def notes(self, request):
-        company = request.user.company
         from_date = request.query_params.get('from_date')
         to_date = request.query_params.get('to_date')
         group_id = request.query_params.get('group')
 
         qs = Attendance.objects.filter(
-            lesson__group__company=company,
+            lesson__group__company_id=resolve_company_id(request),
         ).exclude(
             note__isnull=True,
         ).exclude(
@@ -75,7 +75,7 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
         """
         user = request.user
         search = request.query_params.get('search', '').strip()
-        company_filter = {} if user.role == 'superadmin' else {'lesson__group__company_id': user.company_id}
+        company_filter = {} if user.role == 'superadmin' else {'lesson__group__company_id': resolve_company_id(request)}
 
         rows = (
             Attendance.objects
@@ -99,7 +99,7 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
         else:
             memberships = GroupStudent.objects.filter(
                 left_at__isnull=True,
-                group__company_id=user.company_id,
+                group__company_id=resolve_company_id(request),
             ).select_related('group__course')
 
         group_map = {str(m.student_id): m.group.display_name for m in memberships}
