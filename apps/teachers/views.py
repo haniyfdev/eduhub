@@ -101,6 +101,31 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         teacher.save()
         return Response({'status': 'active'})
 
+    @action(detail=True, methods=['post'])
+    def freeze(self, request, pk=None):
+        teacher = self.get_object()
+        if teacher.status == 'frozen':
+            return Response({'error': "O'qituvchi allaqachon muzlatilgan"}, status=400)
+        if teacher.status == 'archived':
+            return Response({'error': "Arxivlangan o'qituvchini muzlatib bo'lmaydi"}, status=400)
+        from apps.groups.models import Group
+        active_groups = Group.objects.filter(teacher=teacher, status='active')
+        if active_groups.exists():
+            group_names = ', '.join([g.display_name for g in active_groups])
+            return Response({'error': f"Bu o'qituvchining faol guruhlari bor: {group_names}. Avval guruhlarni arxivlang yoki muzlating."}, status=400)
+        teacher.status = 'frozen'
+        teacher.save(update_fields=['status'])
+        return Response({'status': 'frozen'})
+
+    @action(detail=True, methods=['post'])
+    def unfreeze(self, request, pk=None):
+        teacher = self.get_object()
+        if teacher.status != 'frozen':
+            return Response({'error': "O'qituvchi muzlatilmagan"}, status=400)
+        teacher.status = 'active'
+        teacher.save(update_fields=['status'])
+        return Response({'status': 'active'})
+
     @action(detail=False, methods=['get'], url_path='top')
     def top(self, request):
         from datetime import timedelta

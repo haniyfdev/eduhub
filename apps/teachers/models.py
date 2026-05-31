@@ -20,7 +20,7 @@ class Teacher(BaseModel):
     kpi_bonus = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
     status = models.CharField(
         max_length=20,
-        choices=[('active', 'Active'), ('archived', 'Archived')],
+        choices=[('active', 'Active'), ('frozen', 'Frozen'), ('archived', 'Archived')],
         default='active',
     )
     hired_at = models.DateField()

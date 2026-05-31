@@ -66,6 +66,8 @@ def _reconcile_status(salary):
 
 def calculate_teacher_salary(teacher, month):
     """Calculate salary per group for a teacher. Returns list of TeacherSalary instances."""
+    if teacher.status in ('frozen', 'archived'):
+        return []
     from apps.groups.models import Group
     from .models import TeacherSalary
 

@@ -87,6 +87,26 @@ class StaffViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         staff.user.save(update_fields=['is_active', 'status'])
         return Response(StaffSerializer(staff).data)
 
+    @action(detail=True, methods=['post'])
+    def freeze(self, request, pk=None):
+        staff = self.get_object()
+        if staff.status == 'frozen':
+            return Response({'error': 'Xodim allaqachon muzlatilgan'}, status=400)
+        if staff.status == 'archived':
+            return Response({'error': "Arxivlangan xodimni muzlatib bo'lmaydi"}, status=400)
+        staff.status = 'frozen'
+        staff.save(update_fields=['status'])
+        return Response({'status': 'frozen'})
+
+    @action(detail=True, methods=['post'])
+    def unfreeze(self, request, pk=None):
+        staff = self.get_object()
+        if staff.status != 'frozen':
+            return Response({'error': 'Xodim muzlatilmagan'}, status=400)
+        staff.status = 'active'
+        staff.save(update_fields=['status'])
+        return Response({'status': 'active'})
+
 
 class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                          mixins.RetrieveModelMixin, viewsets.GenericViewSet):

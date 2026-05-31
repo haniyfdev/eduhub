@@ -4,6 +4,7 @@ from apps.base import BaseModel
 
 STATUS_CHOICES = [
     ('active',   'Faol'),
+    ('frozen',   'Muzlatilgan'),
     ('archived', 'Arxivlangan'),
 ]
 
