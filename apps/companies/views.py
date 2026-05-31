@@ -16,7 +16,7 @@ class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
     POST   /api/v1/companies/              superadmin + boss + manager (branch creation)
     GET    /api/v1/companies/{id}/         superadmin + boss only
     PATCH  /api/v1/companies/{id}/         superadmin + boss only
-    POST   /api/v1/companies/{id}/archive/ superadmin only
+    POST   /api/v1/companies/{id}/archive/ superadmin + boss only (own branches)
     """
     queryset = Company.objects.all().order_by('created_at')
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
@@ -26,9 +26,7 @@ class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
             return [(IsSuperAdmin | IsBossOrManager)()]
         if self.action == 'create':
             return [(IsSuperAdmin | IsBossOrManager)()]
-        if self.action == 'archive':
-            return [IsSuperAdmin()]
-        if self.action in ('retrieve', 'update', 'partial_update'):
+        if self.action in ('retrieve', 'update', 'partial_update', 'archive'):
             return [(IsSuperAdmin | IsBoss)()]
         return [IsAuthenticated()]
 

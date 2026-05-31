@@ -18,10 +18,22 @@ class IsBoss(BasePermission):
     role == 'boss' only.
     Exception to Rule 4 — used where branch/company ownership matters
     and manager should not have access (e.g. company detail management).
+
+    Object-level: boss may only act on their own company or branches where
+    branch_of_id == boss.company_id.
     """
 
     def has_permission(self, request, view):
         return _active(request.user) and request.user.role == 'boss'
+
+    def has_object_permission(self, request, view, obj):
+        if not _active(request.user) or request.user.role != 'boss':
+            return False
+        company_id = request.user.company_id
+        return (
+            obj.id == company_id or
+            getattr(obj, 'branch_of_id', None) == company_id
+        )
 
 
 class IsBossOrManager(BasePermission):
