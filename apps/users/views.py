@@ -32,16 +32,19 @@ class LoginView(APIView):
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
 
-        # Build list of company IDs this user can access
+        # Build list of companies this user can access (id + name for switcher UI)
         accessible_companies = []
         if user.company_id:
-            accessible_companies.append(str(user.company_id))
+            from apps.companies.models import Company
+            own = Company.objects.filter(id=user.company_id).first()
+            if own:
+                accessible_companies.append({'id': str(own.id), 'name': own.name})
             if user.role in ['boss', 'manager']:
-                from apps.companies.models import Company
-                branch_ids = Company.objects.filter(
-                    branch_of_id=user.company_id
-                ).values_list('id', flat=True)
-                accessible_companies += [str(bid) for bid in branch_ids]
+                branches = Company.objects.filter(
+                    branch_of_id=user.company_id, status='active'
+                ).values('id', 'name')
+                for b in branches:
+                    accessible_companies.append({'id': str(b['id']), 'name': b['name']})
 
         return Response({
             'access': str(refresh.access_token),

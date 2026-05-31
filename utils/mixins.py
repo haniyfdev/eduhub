@@ -25,23 +25,41 @@ class ArchiveMixin:
 class CompanyFilterMixin:
     """
     Filters queryset to the request user's company. Superadmin sees all.
-    Must be combined with a ViewSet that defines `queryset`.
+    Boss can switch to a branch via the X-Active-Company request header;
+    the header value is validated against companies the boss owns.
     """
+
+    def _resolve_company_id(self):
+        """Return the effective company_id for the current request."""
+        user = self.request.user
+        if user.role != 'boss':
+            return user.company_id
+        active = self.request.headers.get('X-Active-Company')
+        if active and active != str(user.company_id):
+            from apps.companies.models import Company
+            from django.db.models import Q
+            allowed = Company.objects.filter(
+                id=active
+            ).filter(
+                Q(id=user.company_id) | Q(branch_of_id=user.company_id)
+            ).exists()
+            if allowed:
+                return active
+        return user.company_id
 
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
         if user.role == 'superadmin':
             return qs
-        return qs.filter(company_id=user.company_id)
+        return qs.filter(company_id=self._resolve_company_id())
 
     def get_object(self):
         obj = super().get_object()
         user = self.request.user
         if user.role != 'superadmin':
             obj_company_id = getattr(obj, 'company_id', None)
-            # Only enforce if the model has a direct company FK; otherwise trust queryset filtering.
-            if obj_company_id is not None and obj_company_id != user.company_id:
+            if obj_company_id is not None and str(obj_company_id) != str(self._resolve_company_id()):
                 from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied()
         return obj
