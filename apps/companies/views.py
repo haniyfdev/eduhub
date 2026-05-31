@@ -23,7 +23,7 @@ class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'list':
-            return [IsSuperAdmin()]
+            return [(IsSuperAdmin | IsBossOrManager)()]
         if self.action == 'create':
             return [(IsSuperAdmin | IsBossOrManager)()]
         if self.action == 'archive':
