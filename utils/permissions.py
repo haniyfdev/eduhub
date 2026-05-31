@@ -13,6 +13,17 @@ class IsSuperAdmin(BasePermission):
         return _active(request.user) and request.user.role == 'superadmin'
 
 
+class IsBoss(BasePermission):
+    """
+    role == 'boss' only.
+    Exception to Rule 4 — used where branch/company ownership matters
+    and manager should not have access (e.g. company detail management).
+    """
+
+    def has_permission(self, request, view):
+        return _active(request.user) and request.user.role == 'boss'
+
+
 class IsBossOrManager(BasePermission):
     """
     role in ['boss', 'manager']

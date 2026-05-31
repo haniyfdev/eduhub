@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from utils.permissions import IsSuperAdmin, IsBossOrManager
+from utils.permissions import IsSuperAdmin, IsBoss, IsBossOrManager
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from .models import Company, CompanySettings
 from .serializers import CompanySerializer, CompanyCreateSerializer, CompanySettingsSerializer
@@ -12,10 +12,10 @@ from .serializers import CompanySerializer, CompanyCreateSerializer, CompanySett
 
 class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
     """
-    GET    /api/v1/companies/              superadmin only
-    POST   /api/v1/companies/              superadmin only
-    GET    /api/v1/companies/{id}/
-    PATCH  /api/v1/companies/{id}/         superadmin + boss
+    GET    /api/v1/companies/              superadmin + boss + manager
+    POST   /api/v1/companies/              superadmin + boss + manager (branch creation)
+    GET    /api/v1/companies/{id}/         superadmin + boss only
+    PATCH  /api/v1/companies/{id}/         superadmin + boss only
     POST   /api/v1/companies/{id}/archive/ superadmin only
     """
     queryset = Company.objects.all().order_by('created_at')
@@ -28,8 +28,8 @@ class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
             return [(IsSuperAdmin | IsBossOrManager)()]
         if self.action == 'archive':
             return [IsSuperAdmin()]
-        if self.action in ('update', 'partial_update'):
-            return [(IsSuperAdmin | IsBossOrManager)()]
+        if self.action in ('retrieve', 'update', 'partial_update'):
+            return [(IsSuperAdmin | IsBoss)()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):
