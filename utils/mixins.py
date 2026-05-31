@@ -16,6 +16,15 @@ def resolve_company_id(request):
     return user.company_id
 
 
+def get_active_company(request):
+    """Return the Company object for the active context (branch or own company). None for superadmin."""
+    from apps.companies.models import Company
+    user = request.user
+    if user.role == 'superadmin':
+        return None
+    return Company.objects.get(id=resolve_company_id(request))
+
+
 class ArchiveMixin:
     """
     Adds a POST /{pk}/archive/ action that sets status='archived' and archived_at=now().
@@ -41,6 +50,13 @@ class CompanyFilterMixin:
     Boss can switch to a branch via the X-Active-Company request header;
     the header value is validated against companies the boss owns.
     """
+
+    def _get_active_company(self):
+        """Return Company object for the active context. None for superadmin."""
+        from apps.companies.models import Company
+        if self.request.user.role == 'superadmin':
+            return None
+        return Company.objects.get(id=self._resolve_company_id())
 
     def _resolve_company_id(self):
         """Return the effective company_id for the current request."""

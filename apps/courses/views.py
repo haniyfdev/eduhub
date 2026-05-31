@@ -31,7 +31,7 @@ class CourseViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         return CourseSerializer
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company)
+        serializer.save(company=self._get_active_company())
 
     @action(detail=True, methods=['post'])
     def restore(self, request, pk=None):

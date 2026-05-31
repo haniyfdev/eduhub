@@ -44,7 +44,7 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         return LeadSerializer
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company, status='pending')
+        serializer.save(company=self._get_active_company(), status='pending')
 
     @action(detail=True, methods=['post'])
     def promote(self, request, pk=None):
@@ -92,8 +92,7 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         """GET /api/v1/leads/conversion-stats/ — current pipeline snapshot."""
         from apps.students.models import Student
 
-        company = request.user.company if request.user.role != 'superadmin' else None
-        cf = {} if company is None else {'company': company}
+        cf = {} if request.user.role == 'superadmin' else {'company_id': self._resolve_company_id()}
 
         total_leads    = Lead.objects.filter(**cf).count()
         total_students = Student.objects.filter(**cf).count()
@@ -139,8 +138,7 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
             'other':        'Boshqa',
         }
 
-        company = request.user.company if request.user.role != 'superadmin' else None
-        cf = {} if company is None else {'company': company}
+        cf = {} if request.user.role == 'superadmin' else {'company_id': self._resolve_company_id()}
 
         lead_refs = (
             Lead.objects.filter(**cf, referral_source__isnull=False)

@@ -55,7 +55,7 @@ class PaymentViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         logger.error(f"Payment create data: {request.data}")
         serializer = PaymentCreateSerializer(
             data=request.data,
-            context={'company': request.user.company, 'request': request},
+            context={'company': self._get_active_company(), 'request': request},
         )
         serializer.is_valid(raise_exception=True)
         try:

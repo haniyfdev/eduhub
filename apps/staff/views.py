@@ -9,7 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from utils.mixins import CompanyFilterMixin
+from utils.mixins import CompanyFilterMixin, get_active_company
 from utils.permissions import IsBossOrManager
 from .models import Staff, StaffSalary
 from .serializers import StaffSerializer, StaffSalarySerializer
@@ -49,7 +49,7 @@ class StaffViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         notes         = request.data.get('notes')
         password      = request.data.get('password', 'parol123')
 
-        company = request.user.company
+        company = get_active_company(request)
 
         if not all([first_name, last_name, phone, role]):
             return Response({'error': 'Barcha maydonlar kerak'}, status=400)
@@ -117,7 +117,7 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
     def generate(self, request):
         """POST /api/v1/staff-salaries/generate/?month=YYYY-MM"""
         month_str = request.query_params.get('month') or request.data.get('month')
-        company = request.user.company
+        company = get_active_company(request)
 
         if month_str:
             try:

@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 import traceback
 
 from utils.permissions import IsSuperAdminOrBossOrManager
+from utils.mixins import resolve_company_id
 from apps.payments.models import Payment
 from apps.teachers.models import Teacher
 from apps.salaries.models import TeacherSalary
@@ -66,8 +67,8 @@ class ProfitLossView(APIView):
     def get(self, request):
         try:
             from_date, to_date = _parse_date_range(request)
-            company = request.user.company if request.user.role != 'superadmin' else None
-            cf = {} if company is None else {'company': company}
+            company_id = None if request.user.role == 'superadmin' else resolve_company_id(request)
+            cf = {} if company_id is None else {'company_id': company_id}
 
             total_income = Payment.objects.filter(
                 **cf, paid_at__date__gte=from_date, paid_at__date__lte=to_date
@@ -154,8 +155,8 @@ class ProfitLossHistoryView(APIView):
 
     def get(self, request):
         from_date, to_date = _parse_date_range(request)
-        company = request.user.company if request.user.role != 'superadmin' else None
-        cf = {} if company is None else {'company': company}
+        company_id = None if request.user.role == 'superadmin' else resolve_company_id(request)
+        cf = {} if company_id is None else {'company_id': company_id}
         group_by = request.query_params.get('group_by', 'month')
 
         results = []
@@ -242,8 +243,8 @@ class ProfitLossTeachersView(APIView):
     def get(self, request):
         try:
             from_date, to_date = _parse_date_range(request)
-            company = request.user.company if request.user.role != 'superadmin' else None
-            cf = {} if company is None else {'company': company}
+            company_id = None if request.user.role == 'superadmin' else resolve_company_id(request)
+            cf = {} if company_id is None else {'company_id': company_id}
 
             teachers = Teacher.objects.filter(**cf, status='active').select_related('user')
             result = []
@@ -277,8 +278,8 @@ class IncomeByCourseView(APIView):
 
     def get(self, request):
         from_date, to_date = _parse_date_range(request)
-        company = request.user.company if request.user.role != 'superadmin' else None
-        cf = {} if company is None else {'company': company}
+        company_id = None if request.user.role == 'superadmin' else resolve_company_id(request)
+        cf = {} if company_id is None else {'company_id': company_id}
 
         result = (
             Payment.objects
@@ -299,8 +300,8 @@ class DebtForecastView(APIView):
 
     def get(self, request):
         from apps.debts.models import Debt
-        company = request.user.company if request.user.role != 'superadmin' else None
-        cf = {} if company is None else {'company': company}
+        company_id = None if request.user.role == 'superadmin' else resolve_company_id(request)
+        cf = {} if company_id is None else {'company_id': company_id}
 
         qs = Debt.objects.filter(**cf).exclude(status='paid')
         total = qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')

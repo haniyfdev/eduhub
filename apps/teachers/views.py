@@ -54,7 +54,7 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         return TeacherSerializer
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company, hired_at=date.today())
+        serializer.save(company=self._get_active_company(), hired_at=date.today())
 
     @action(detail=True, methods=['patch'], url_path='salary')
     def salary(self, request, pk=None):

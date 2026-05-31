@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from utils.mixins import CompanyFilterMixin
+from utils.mixins import CompanyFilterMixin, get_active_company
 from .models import Announcement, AnnouncementRead, Notification, SmsTemplate
 from .serializers import AnnouncementSerializer, NotificationSerializer, SmsTemplateSerializer
 
@@ -42,7 +42,7 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
             return SmsTemplate.objects.filter(
                 company__isnull=True
             ).order_by('-created_at')
-        company = user.company
+        company = get_active_company(self.request)
         company_names = SmsTemplate.objects.filter(
             company=company
         ).values_list('name', flat=True)
@@ -57,14 +57,14 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
         if user.role == 'superadmin':
             serializer.save(company=None, is_default=True)
         else:
-            serializer.save(company=user.company, is_default=False)
+            serializer.save(company=get_active_company(self.request), is_default=False)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         user = request.user
         if instance.company is None and user.role != 'superadmin':
             new_template = SmsTemplate.objects.create(
-                company=user.company,
+                company=get_active_company(request),
                 name=instance.name,
                 trigger=instance.trigger,
                 body=request.data.get('body', instance.body),
@@ -82,7 +82,7 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
                 {'error': "Standart shablonni o'chira olmaysiz"},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if instance.company and instance.company != user.company:
+        if instance.company and instance.company != get_active_company(request):
             return Response({'error': "Ruxsat yo'q"}, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
 

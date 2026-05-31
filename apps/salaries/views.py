@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from utils.mixins import CompanyFilterMixin, ArchiveMixin
+from utils.mixins import CompanyFilterMixin, ArchiveMixin, get_active_company
 from utils.permissions import IsBossOrManager
 from .models import TeacherSalary, StaffSalary, StaffKpiRule
 from .serializers import (
@@ -143,7 +143,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         from apps.teachers.models import Teacher as TeacherModel
 
         month_str = request.query_params.get('month') or request.data.get('month')
-        company = request.user.company
+        company = get_active_company(request)
 
         if month_str:
             try:
@@ -168,7 +168,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         from django.db.models import Sum
         from apps.staff.models import StaffSalary as StaffMemberSalary
 
-        company = request.user.company
+        company = get_active_company(request)
         month   = request.query_params.get('month')
 
         ts_qs = TeacherSalary.objects.filter(company=company)
@@ -322,7 +322,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 continue
 
             try:
-                salary = TeacherSalary.objects.get(id=salary_id, company=request.user.company)
+                salary = TeacherSalary.objects.get(id=salary_id, company=get_active_company(request))
             except TeacherSalary.DoesNotExist:
                 errors.append({'salary_id': salary_id, 'error': 'Not found'})
                 continue
@@ -410,7 +410,7 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         return StaffSalarySerializer
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company)
+        serializer.save(company=self._get_active_company())
 
 
 class StaffKpiRuleViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
@@ -426,4 +426,4 @@ class StaffKpiRuleViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSe
         return StaffKpiRuleSerializer
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company)
+        serializer.save(company=self._get_active_company())

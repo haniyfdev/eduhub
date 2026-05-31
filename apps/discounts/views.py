@@ -28,7 +28,7 @@ class DiscountViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         from dateutil.relativedelta import relativedelta
         next_month = date.today().replace(day=1) + relativedelta(months=1)
         serializer.save(
-            company=self.request.user.company,
+            company=self._get_active_company(),
             created_by=self.request.user,
             start_month=next_month,
         )

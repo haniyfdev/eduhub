@@ -2,6 +2,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from utils.mixins import resolve_company_id
 from .models import Group
 
 
@@ -16,7 +17,7 @@ class RoomsView(APIView):
             groups = Group.objects.filter(status='active')
         else:
             groups = Group.objects.filter(
-                company_id=user.company_id,
+                company_id=resolve_company_id(request),
                 status__in=['active', 'frozen'],
             )
 

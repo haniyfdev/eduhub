@@ -89,7 +89,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         from rest_framework.exceptions import ValidationError
-        company = self.request.user.company
+        company = self._get_active_company()
         data = serializer.validated_data
         conflict = self._get_conflicting_group(
             room=data.get('room'),

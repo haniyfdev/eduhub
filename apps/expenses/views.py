@@ -27,14 +27,14 @@ class ExpenseViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
 
     def perform_create(self, serializer):
         serializer.save(
-            company=self.request.user.company,
+            company=self._get_active_company(),
             source='manual',
             created_by=self.request.user,
         )
 
     def get_queryset(self):
             # Asosiy queryset (CompanyFilterMixin orqali faqat o'z kompaniyasini ko'radi)
-            qs = Expense.objects.filter(company=self.request.user.company) if self.request.user.role != 'superadmin' else Expense.objects.all()
+            qs = Expense.objects.filter(company_id=self._resolve_company_id()) if self.request.user.role != 'superadmin' else Expense.objects.all()
             
             month = self.request.query_params.get('month')
             year_param = self.request.query_params.get('year')

@@ -2,6 +2,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from utils.mixins import get_active_company
+
 
 class SmsVariablesView(APIView):
     permission_classes = [IsAuthenticated]
@@ -12,7 +14,7 @@ class SmsVariablesView(APIView):
         from apps.debts.models import Debt
 
         student_ids = request.data.get('student_ids', [])
-        company = request.user.company
+        company = get_active_company(request)
 
         students = Student.objects.filter(
             id__in=student_ids,

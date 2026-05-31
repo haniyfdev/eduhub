@@ -1,3 +1,4 @@
+from utils.mixins import get_active_company
 from decimal import Decimal
 from datetime import date
 from django.db.models import Sum, Count, Q
@@ -17,7 +18,7 @@ class DashboardSummaryView(APIView):
         from apps.debts.models import Debt
         from apps.teachers.models import Teacher
 
-        company = request.user.company
+        company = get_active_company(request)
         today = date.today()
 
         students = Student.objects.filter(company=company)
@@ -54,7 +55,7 @@ class DashboardRevenueView(APIView):
         from apps.payments.models import Payment
         from dateutil.relativedelta import relativedelta
 
-        company = request.user.company
+        company = get_active_company(request)
         try:
             period = int(request.query_params.get('period', 6))
         except ValueError:
@@ -83,7 +84,7 @@ class DashboardDebtsSummaryView(APIView):
         from apps.debts.models import Debt
         from django.db.models import Count, Sum
 
-        company = request.user.company
+        company = get_active_company(request)
         rows = Debt.objects.filter(company=company).values('status').annotate(
             count=Count('id'), total=Sum('amount')
         )
@@ -104,7 +105,7 @@ class DashboardTeacherStatsView(APIView):
         from apps.groups.models import GroupStudent
         from apps.payments.models import Payment
 
-        company = request.user.company
+        company = get_active_company(request)
         today = date.today()
         teachers = Teacher.objects.filter(company=company, status='active').select_related('user')
         result = []

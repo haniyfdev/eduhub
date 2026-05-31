@@ -83,7 +83,8 @@ class CompanySettingsViewSet(mixins.RetrieveModelMixin, mixins.UpdateModelMixin,
         user = self.request.user
         if user.role == 'superadmin':
             return CompanySettings.objects.all()
-        return CompanySettings.objects.filter(company_id=user.company_id)
+        from utils.mixins import resolve_company_id
+        return CompanySettings.objects.filter(company_id=resolve_company_id(self.request))
 
     @action(detail=False, methods=['get', 'patch'], url_path='my')
     def my_settings(self, request):
@@ -96,7 +97,8 @@ class CompanySettingsViewSet(mixins.RetrieveModelMixin, mixins.UpdateModelMixin,
                 'teacher_contract_break_policy': 'full',
             })
 
-        settings_obj, _ = CompanySettings.objects.get_or_create(company=user.company)
+        from utils.mixins import get_active_company
+        settings_obj, _ = CompanySettings.objects.get_or_create(company=get_active_company(request))
 
         if request.method == 'PATCH':
             serializer = CompanySettingsSerializer(

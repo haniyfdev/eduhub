@@ -21,4 +21,4 @@ class RoomViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company)
+        serializer.save(company=self._get_active_company())
