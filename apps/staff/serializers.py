@@ -19,13 +19,14 @@ class StaffSerializer(serializers.ModelSerializer):
     phone        = serializers.CharField(source='user.phone', read_only=True)
     role         = serializers.CharField(source='user.role', read_only=True)
     role_display = serializers.SerializerMethodField()
+    hired_at     = serializers.DateTimeField(source='user.created_at', read_only=True)
 
     class Meta:
         model  = Staff
         fields = (
             'id', 'user', 'first_name', 'last_name', 'full_name',
             'phone', 'role', 'role_display',
-            'salary_amount', 'notes', 'status',
+            'salary_amount', 'notes', 'status', 'hired_at',
         )
         read_only_fields = ('id', 'user')
 
