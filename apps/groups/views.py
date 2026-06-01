@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.filters import SearchFilter
 
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
-from utils.permissions import IsBossManagerOrAdmin
+from utils.permissions import IsBossManagerOrAdmin, IsBossOrManager
 from .models import Group, GroupStudent
 from .serializers import GroupSerializer, GroupCreateSerializer
 
@@ -46,6 +46,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'archive', 'freeze', 'unfreeze'):
+            return [IsBossOrManager()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):
