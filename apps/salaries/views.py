@@ -112,6 +112,8 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 'kpi_amount':       kpi,
             })
 
+        # For fixed salary: replace null-group entry with teacher's actual active groups (display only)
+        from apps.groups.models import Group, GroupStudent
         results = []
         for entry in teacher_map.values():
             remaining = entry['total_owed'] - entry['total_paid']
@@ -121,6 +123,36 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 entry['overall_status'] = 'partial'
             else:
                 entry['overall_status'] = 'unpaid'
+
+            if entry['salary_type'] == 'fixed':
+                # Replace null-group salary entry with actual active groups for display
+                actual_groups = Group.objects.filter(
+                    teacher_id=entry['teacher_id'],
+                    status='active',
+                ).select_related('course')
+                display_groups = []
+                for g in actual_groups:
+                    student_count = GroupStudent.objects.filter(
+                        group=g, left_at__isnull=True, student__status='active'
+                    ).count()
+                    display_groups.append({
+                        'salary_id':         entry['groups'][0]['salary_id'] if entry['groups'] else '',
+                        'group_id':          str(g.id),
+                        'group_name':        g.display_name,
+                        'course_name':       g.course.name if g.course else None,
+                        'calculated_amount': 0,  # fixed amount shown at teacher level
+                        'paid_amount':       0,
+                        'carry_over':        0,
+                        'total_owed':        0,
+                        'status':            entry['groups'][0]['status'] if entry['groups'] else 'unpaid',
+                        'due_date':          entry['groups'][0]['due_date'] if entry['groups'] else None,
+                        'first_active_date': None,
+                        'student_count':     student_count,
+                        'course_price':      float(g.course.price) if g.course else 0,
+                        'kpi_amount':        0,
+                    })
+                entry['groups'] = display_groups
+
             results.append(entry)
 
         return Response(results)
