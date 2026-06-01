@@ -4,7 +4,7 @@ from decimal import Decimal
 
 
 class Command(BaseCommand):
-    help = 'Promote trial students who have 2+ present attendances'
+    help = 'Promote trial students who have 2+ present/late attendances'
 
     def handle(self, *args, **kwargs):
         from apps.students.models import Student
@@ -23,35 +23,58 @@ class Command(BaseCommand):
             ).count()
 
             if present_count >= 2:
-                self.stdout.write(f'Promoting {student.first_name} {student.last_name} (present={present_count})')
+                self.stdout.write(
+                    f'Promoting {student.first_name} {student.last_name} '
+                    f'(present+late={present_count})'
+                )
 
-                # 1. Promote student
-                student.status = 'active'
-                student.save(update_fields=['status'])
+                Student.objects.filter(id=student.id).update(status='active')
 
-                # 2. Delete linked lead
                 if student.lead_id:
                     Lead.objects.filter(id=student.lead_id).delete()
                     Student.objects.filter(id=student.id).update(lead=None)
-                    self.stdout.write(f'  -> Lead deleted')
+                    self.stdout.write('  -> Lead deleted')
 
-                # 3. Create debt if not exists
                 gs = GroupStudent.objects.filter(
                     student=student,
                     left_at__isnull=True,
                 ).select_related('group__course').first()
 
                 if gs and gs.group.course and gs.group.course.price > 0:
+                    current_month = date.today().replace(day=1)
+                    course_price = Decimal(str(gs.group.course.price))
+
+                    active_discount = None
+                    try:
+                        active_discount = student.discounts.filter(
+                            start_month__lte=current_month,
+                            end_month__gte=current_month,
+                            course=gs.group.course,
+                        ).first()
+                    except Exception:
+                        pass
+
+                    if active_discount:
+                        discount_amt = course_price * active_discount.percent / 100
+                        final_amount = course_price - discount_amt
+                    else:
+                        discount_amt = Decimal('0')
+                        final_amount = course_price
+
                     debt, created = Debt.objects.get_or_create(
                         student=student,
                         company=student.company,
                         defaults={
-                            'amount': gs.group.course.price,
-                            'discount_amount': Decimal('0'),
+                            'amount': final_amount,
+                            'discount_amount': discount_amt,
                             'due_date': date.today() + timedelta(days=15),
                             'status': 'unpaid',
                         },
                     )
-                    self.stdout.write(f'  -> Debt {"created" if created else "already exists"}: {debt.amount}')
+                    self.stdout.write(
+                        f'  -> Debt {"created" if created else "already exists"}: {debt.amount}'
+                    )
+                else:
+                    self.stdout.write('  -> No active group/course found')
 
         self.stdout.write('Done!')

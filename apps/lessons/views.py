@@ -122,13 +122,8 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
                 student_id=item['student_id'],
                 defaults={'status': item['status'], 'note': item.get('note', '')},
             )
-            from django.db.models.signals import post_save
-            post_save.send(
-                sender=obj.__class__,
-                instance=obj,
-                created=created_flag,
-                using='default',
-            )
+            from apps.lessons.signals import auto_promote_trial_student
+            auto_promote_trial_student(sender=obj.__class__, instance=obj)
             created.append(obj)
 
         lesson.finished_at = timezone.now()
