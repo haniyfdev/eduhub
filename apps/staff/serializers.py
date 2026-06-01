@@ -53,7 +53,7 @@ class StaffSalarySerializer(serializers.ModelSerializer):
         try:
             created_at = obj.staff.user.created_at
             if created_at:
-                return created_at.strftime('%d/%m/%Y')
+                return created_at.strftime('%Y-%m-%d')
         except Exception:
             pass
         return None
