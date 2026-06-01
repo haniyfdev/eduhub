@@ -71,39 +71,55 @@ def calculate_teacher_salary(teacher, month):
     from apps.groups.models import Group
     from .models import TeacherSalary
 
-    groups = Group.objects.filter(
+    active_groups = Group.objects.filter(
         teacher=teacher,
         status='active',
         company=teacher.company,
     ).select_related('course')
 
-    # Pre-compute per-group data so we know the total count for fixed salary splitting
-    groups_with_data = [(g, calculate_group_salary(teacher, g)) for g in groups if g]
-    eligible = [(g, d) for g, d in groups_with_data if d is not None]
+    month_start = month.replace(day=1)
 
-    # For fixed salary: the total monthly amount is fixed_amount, split evenly across groups
+    # ── Fixed salary: ONE record with no group, full fixed_amount ──────────
     if teacher.salary_type == 'fixed':
-        n = max(len(eligible), 1)
-        fixed_per_group = (teacher.fixed_amount or Decimal('0')) / n
-    else:
-        fixed_per_group = Decimal('0')
+        base = teacher.fixed_amount or Decimal('0')
+        kpi  = teacher.kpi_bonus    or Decimal('0')
+        total = base + kpi
+
+        salary, _ = TeacherSalary.objects.update_or_create(
+            teacher=teacher,
+            group=None,
+            company=teacher.company,
+            month=month_start,
+            defaults={
+                'base_amount':       base,
+                'kpi_amount':        kpi,
+                'total_amount':      total,
+                'calculated_amount': total,
+                'due_date':          (month_start + relativedelta(months=1)),
+            },
+        )
+        _reconcile_status(salary)
+        return [salary]
+
+    # ── Per-group salary (percent / per_student) ───────────────────────────
+    eligible = [(g, calculate_group_salary(teacher, g)) for g in active_groups if g]
+    eligible = [(g, d) for g, d in eligible if d is not None]
 
     created_salaries = []
     first_group = True
 
     for group, data in eligible:
-        # KPI only on the first group to avoid duplication
         kpi_amount = (teacher.kpi_bonus or Decimal('0')) if first_group else Decimal('0')
         first_group = False
 
-        base = fixed_per_group if teacher.salary_type == 'fixed' else data['calculated_amount']
+        base = data['calculated_amount']
         calculated_amount = base + kpi_amount
 
         salary, _ = TeacherSalary.objects.update_or_create(
             teacher=teacher,
             group=group,
             company=teacher.company,
-            month=month.replace(day=1),
+            month=month_start,
             defaults={
                 'base_amount':       base,
                 'kpi_amount':        kpi_amount,
