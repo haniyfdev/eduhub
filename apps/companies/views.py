@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from utils.permissions import IsSuperAdmin, IsBoss, IsBossOrManager
+from utils.permissions import IsSuperAdmin, IsBoss, IsBossOrManager, IsBossManagerOrAdmin
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from .models import Company, CompanySettings
 from .serializers import CompanySerializer, CompanyCreateSerializer, CompanySettingsSerializer
@@ -26,8 +26,10 @@ class CompanyViewSet(ArchiveMixin, viewsets.ModelViewSet):
             return [(IsSuperAdmin | IsBossOrManager)()]
         if self.action == 'create':
             return [(IsSuperAdmin | IsBossOrManager)()]
-        if self.action in ('retrieve', 'update', 'partial_update', 'archive'):
+        if self.action == 'archive':
             return [(IsSuperAdmin | IsBoss)()]
+        if self.action in ('retrieve', 'update', 'partial_update'):
+            return [(IsSuperAdmin | IsBossManagerOrAdmin)()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):
