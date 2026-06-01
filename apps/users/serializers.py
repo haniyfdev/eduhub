@@ -44,6 +44,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
         model = User
         fields = ('id', 'company', 'first_name', 'last_name', 'phone', 'role', 'password')
 
+    def validate_phone(self, value):
+        normalized = value.strip().replace(' ', '').replace('-', '')
+        if User.objects.filter(phone=normalized).exists():
+            raise serializers.ValidationError("Bu telefon raqam allaqachon ro'yxatdan o'tgan.")
+        return normalized
+
     def create(self, validated_data):
         password = validated_data.pop('password')
         user = User(**validated_data)
@@ -56,6 +62,15 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('first_name', 'last_name', 'phone', 'role')
+
+    def validate_phone(self, value):
+        normalized = value.strip().replace(' ', '').replace('-', '')
+        qs = User.objects.filter(phone=normalized)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Bu telefon raqam allaqachon ro'yxatdan o'tgan.")
+        return normalized
 
 
 class UserListSerializer(serializers.ModelSerializer):
