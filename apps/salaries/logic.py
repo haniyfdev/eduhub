@@ -77,21 +77,26 @@ def calculate_teacher_salary(teacher, month):
         company=teacher.company,
     ).select_related('course')
 
+    # Pre-compute per-group data so we know the total count for fixed salary splitting
+    groups_with_data = [(g, calculate_group_salary(teacher, g)) for g in groups if g]
+    eligible = [(g, d) for g, d in groups_with_data if d is not None]
+
+    # For fixed salary: the total monthly amount is fixed_amount, split evenly across groups
+    if teacher.salary_type == 'fixed':
+        n = max(len(eligible), 1)
+        fixed_per_group = (teacher.fixed_amount or Decimal('0')) / n
+    else:
+        fixed_per_group = Decimal('0')
+
     created_salaries = []
     first_group = True
 
-    for group in groups:
-        if not group:
-            continue
-        data = calculate_group_salary(teacher, group)
-        if data is None:
-            continue
-
+    for group, data in eligible:
         # KPI only on the first group to avoid duplication
         kpi_amount = (teacher.kpi_bonus or Decimal('0')) if first_group else Decimal('0')
         first_group = False
 
-        base = data['calculated_amount']
+        base = fixed_per_group if teacher.salary_type == 'fixed' else data['calculated_amount']
         calculated_amount = base + kpi_amount
 
         salary, _ = TeacherSalary.objects.update_or_create(
