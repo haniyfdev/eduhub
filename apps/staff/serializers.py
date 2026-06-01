@@ -38,15 +38,25 @@ class StaffSalarySerializer(serializers.ModelSerializer):
     staff_name = serializers.SerializerMethodField()
     staff_role = serializers.SerializerMethodField()
     total_owed = serializers.SerializerMethodField()
+    hired_at   = serializers.SerializerMethodField()
 
     class Meta:
         model  = StaffSalary
         fields = (
-            'id', 'staff', 'staff_name', 'staff_role', 'company', 'month',
+            'id', 'staff', 'staff_name', 'staff_role', 'hired_at', 'company', 'month',
             'calculated_amount', 'paid_amount', 'carry_over', 'total_owed',
             'due_date', 'status', 'is_paid', 'paid_at', 'note',
         )
         read_only_fields = ('id', 'company')
+
+    def get_hired_at(self, obj):
+        try:
+            created_at = obj.staff.user.created_at
+            if created_at:
+                return created_at.strftime('%d/%m/%Y')
+        except Exception:
+            pass
+        return None
 
     def get_staff_name(self, obj):
         return obj.staff.user.get_full_name()

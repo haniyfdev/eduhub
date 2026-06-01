@@ -110,7 +110,7 @@ class StaffViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
 
 class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                          mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    queryset = StaffSalary.objects.select_related('staff__user').order_by(
+    queryset = StaffSalary.objects.select_related('staff__user', 'staff').order_by(
         '-month', 'staff__user__first_name'
     )
     serializer_class = StaffSalarySerializer
