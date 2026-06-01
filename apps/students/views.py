@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 
 from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import ArchiveMixin, CompanyFilterMixin, resolve_company_id
+from utils.permissions import IsBossOrManager
 from .models import Student
 from .serializers import StudentSerializer, StudentCreateSerializer, StudentUpdateSerializer
  
@@ -39,6 +40,8 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     search_fields     = ['first_name', 'last_name']
  
     def get_permissions(self):
+        if self.action in ('archive', 'restore'):
+            return [IsBossOrManager()]
         return [IsAuthenticated()]
     
     def get_queryset(self):
@@ -206,6 +209,11 @@ class _ArchivePagination(PageNumberPagination):
 
 class ArchiveStudentsView(APIView):
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsBossOrManager()]
 
     def get(self, request):
         from apps.leads.models import Lead
