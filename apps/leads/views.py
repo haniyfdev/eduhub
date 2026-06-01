@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import CompanyFilterMixin
-from utils.permissions import IsBossOrManager
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin
 from .models import Lead
 from .serializers import LeadSerializer, LeadCreateSerializer
 
@@ -34,8 +34,10 @@ class LeadViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         return qs.filter(company_id=self._resolve_company_id()).order_by('status_order', 'created_at')
 
     def get_permissions(self):
-        if self.action in ('promote', 'demote', 'ignore', 'partial_update', 'update', 'create'):
+        if self.action in ('promote', 'demote'):
             return [IsBossOrManager()]
+        if self.action in ('create', 'update', 'partial_update', 'ignore'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):

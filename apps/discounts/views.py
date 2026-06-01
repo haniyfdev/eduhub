@@ -1,7 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from utils.mixins import CompanyFilterMixin
-from utils.permissions import IsBossOrManager
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin, IsBossOrManagerOrAdmin
 from .models import Discount
 from .serializers import DiscountSerializer, DiscountCreateSerializer
 
@@ -12,11 +12,11 @@ class DiscountViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
     filterset_fields = ['student', 'course']
 
     def get_permissions(self):
-        user = self.request.user
-        if hasattr(user, 'role') and user.role == 'admin':
-            if self.action in ['list', 'retrieve']:
-                return [IsAuthenticated()]
-        return [IsBossOrManager()]
+        if self.action == 'destroy':
+            return [IsBossOrManager()]
+        if self.action in ('create', 'update', 'partial_update'):
+            return [IsBossOrManagerOrAdmin()]
+        return [IsAuthenticated()]
 
     def get_serializer_class(self):
         if self.action == 'create':

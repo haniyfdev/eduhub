@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
  
 from utils.mixins import CompanyFilterMixin
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin
 from .models import Debt
 from .serializers import DebtSerializer, DebtUpdateSerializer
  
@@ -23,6 +24,8 @@ class DebtViewSet(
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
  
     def get_permissions(self):
+        if self.action in ('update', 'partial_update'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
  
     def get_serializer_class(self):

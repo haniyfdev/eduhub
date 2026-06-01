@@ -2,6 +2,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
 from utils.mixins import CompanyFilterMixin
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin
 from .models import Room
 from .serializers import RoomSerializer
 
@@ -18,6 +19,10 @@ class RoomViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         return qs.filter(status=status)
 
     def get_permissions(self):
+        if self.action == 'restore':
+            return [IsBossOrManager()]
+        if self.action in ('create', 'update', 'partial_update', 'archive'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     def perform_create(self, serializer):

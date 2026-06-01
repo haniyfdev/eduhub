@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from utils.mixins import CompanyFilterMixin, ArchiveMixin, get_active_company
-from utils.permissions import IsBossOrManager
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin, IsBossOrManagerOrAdmin
 from .models import TeacherSalary, StaffSalary, StaffKpiRule
 from .serializers import (
     TeacherSalarySerializer,
@@ -60,6 +60,8 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         )
 
     def get_permissions(self):
+        if self.action in ('generate', 'calculate', 'pay', 'mark_paid', 'bulk_pay'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     def list(self, request, *args, **kwargs):
@@ -400,8 +402,8 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         return qs
 
     def get_permissions(self):
-        if self.action == 'create':
-            return [IsBossOrManager()]
+        if self.action in ('generate', 'pay', 'create'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):

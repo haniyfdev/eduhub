@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import ArchiveMixin, CompanyFilterMixin, resolve_company_id
-from utils.permissions import IsBossOrManager
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin
 from .models import Student
 from .serializers import StudentSerializer, StudentCreateSerializer, StudentUpdateSerializer
  
@@ -40,8 +40,10 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     search_fields     = ['first_name', 'last_name']
  
     def get_permissions(self):
-        if self.action in ('archive', 'restore'):
+        if self.action == 'restore':
             return [IsBossOrManager()]
+        if self.action in ('archive', 'create', 'update', 'partial_update'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
     
     def get_queryset(self):

@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from utils.mixins import CompanyFilterMixin, get_active_company
-from utils.permissions import IsBossOrManager
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin, IsBossOrManagerOrAdmin
 from .models import Staff, StaffSalary
 from .serializers import StaffSerializer, StaffSalarySerializer
 
@@ -31,8 +31,10 @@ class StaffViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ('create', 'partial_update', 'archive'):
+        if self.action in ('unfreeze',):
             return [IsBossOrManager()]
+        if self.action in ('create', 'update', 'partial_update', 'archive', 'freeze'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):
@@ -131,6 +133,10 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         return qs
 
     def get_permissions(self):
+        if self.action in ('generate', 'pay'):
+            return [IsBossOrManagerOrAdmin()]
+        if self.action == 'create':
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     @action(detail=False, methods=['post'], url_path='generate')

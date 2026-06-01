@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
-from utils.permissions import IsBossOrManager
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin, IsBossOrManagerOrAdmin
 from .models import Course
 from .serializers import CourseSerializer, CourseCreateSerializer, CourseUpdateSerializer
 
@@ -19,8 +19,10 @@ class CourseViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_permissions(self):
-        if self.action in ('create', 'partial_update', 'update', 'archive', 'restore'):
+        if self.action == 'restore':
             return [IsBossOrManager()]
+        if self.action in ('create', 'update', 'partial_update', 'archive'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):

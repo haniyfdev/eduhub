@@ -3,6 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from utils.mixins import CompanyFilterMixin
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin
 from .models import Payment
 from .serializers import PaymentSerializer, PaymentCreateSerializer
 
@@ -20,6 +21,8 @@ class PaymentViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
     http_method_names = ['get', 'post', 'head', 'options']
 
     def get_permissions(self):
+        if self.action == 'create':
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):

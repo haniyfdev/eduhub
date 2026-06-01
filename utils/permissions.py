@@ -53,6 +53,13 @@ class IsBossManagerOrAdmin(BasePermission):
         return _active(request.user) and request.user.role in ['boss', 'manager', 'admin']
 
 
+class IsBossOrManagerOrAdmin(BasePermission):
+    """role in ['boss', 'manager', 'admin', 'superadmin'] — can create/edit/archive but NOT restore."""
+
+    def has_permission(self, request, view):
+        return _active(request.user) and request.user.role in ['boss', 'manager', 'admin', 'superadmin']
+
+
 class IsTeacher(BasePermission):
     """role == 'teacher'"""
 

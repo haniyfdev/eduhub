@@ -11,7 +11,7 @@ from rest_framework.response import Response
 
 from django_filters.rest_framework import DjangoFilterBackend
 from utils.mixins import ArchiveMixin, CompanyFilterMixin
-from utils.permissions import IsBossOrManager
+from utils.permissions import IsBossOrManager, IsBossOrManagerOrAdmin, IsBossOrManagerOrAdmin
 from .models import Teacher
 from .serializers import TeacherSerializer, TeacherCreateSerializer, TeacherSalaryUpdateSerializer
 
@@ -42,10 +42,10 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         return qs.filter(company_id=self._resolve_company_id()).order_by('status_order', 'user__last_name')
 
     def get_permissions(self):
-        if self.action in ('create', 'archive'):
+        if self.action in ('restore', 'unfreeze'):
             return [IsBossOrManager()]
-        if self.action in ('salary', 'partial_update', 'update'):
-            return [IsBossOrManager()]
+        if self.action in ('create', 'update', 'partial_update', 'archive', 'freeze', 'salary'):
+            return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
     def get_serializer_class(self):
