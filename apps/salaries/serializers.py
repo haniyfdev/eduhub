@@ -76,6 +76,9 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
     def get_carry_over(self, obj):
         from django.db.models import Sum
         from decimal import Decimal
+        # Fixed salary: each month is independent, no carry_over accumulation
+        if obj.teacher.salary_type == 'fixed':
+            return Decimal('0')
         result = TeacherSalary.objects.filter(
             teacher=obj.teacher,
             group=obj.group,
@@ -89,7 +92,7 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         return max(total, Decimal('0'))
 
     def get_total_owed(self, obj):
-        return obj.calculated_amount + self.get_carry_over(obj)
+        return obj.calculated_amount + self.get_carry_over(obj) - obj.paid_amount
 
 
 class StaffSalarySerializer(serializers.ModelSerializer):
