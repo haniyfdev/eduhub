@@ -42,7 +42,7 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'restore':
             return [IsBossOrManager()]
-        if self.action in ('archive', 'create', 'update', 'partial_update'):
+        if self.action in ('archive', 'freeze', 'unfreeze', 'create', 'update', 'partial_update'):
             return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
     
@@ -128,6 +128,26 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         student.archived_at = None
         student.save(update_fields=['status', 'archive_reason', 'archived_at'])
         return Response({'status': 'active', 'student_id': str(student.id)})
+
+    @action(detail=True, methods=['post'])
+    def freeze(self, request, pk=None):
+        student = self.get_object()
+        if student.status == 'frozen':
+            return Response({'error': "O'quvchi allaqachon muzlatilgan"}, status=400)
+        if student.status == 'archived':
+            return Response({'error': "Arxivlangan o'quvchini muzlatib bo'lmaydi"}, status=400)
+        student.status = 'frozen'
+        student.save(update_fields=['status'])
+        return Response({'status': 'frozen'})
+
+    @action(detail=True, methods=['post'])
+    def unfreeze(self, request, pk=None):
+        student = self.get_object()
+        if student.status != 'frozen':
+            return Response({'error': "O'quvchi muzlatilmagan"}, status=400)
+        student.status = 'active'
+        student.save(update_fields=['status'])
+        return Response({'status': 'active'})
 
     @action(detail=True, methods=['get'])
     def payments(self, request, pk=None):
