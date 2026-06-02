@@ -163,13 +163,7 @@ class StaffSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             calculated_amount = staff.salary_amount
             due_date = (month + relativedelta(months=1)).replace(day=1)
 
-            prev_salary = StaffSalary.objects.filter(staff=staff, month=prev_month).first()
-            carry_over = Decimal('0')
-            if prev_salary and prev_salary.status != 'paid':
-                carry_over = max(
-                    Decimal('0'),
-                    prev_salary.calculated_amount + prev_salary.carry_over - prev_salary.paid_amount,
-                )
+            carry_over = Decimal('0')  # Each month is independent
 
             salary, was_created = StaffSalary.objects.get_or_create(
                 staff=staff, company=company, month=month,
