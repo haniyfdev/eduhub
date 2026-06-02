@@ -92,7 +92,7 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         return max(total, Decimal('0'))
 
     def get_total_owed(self, obj):
-        return obj.calculated_amount + self.get_carry_over(obj) - obj.paid_amount
+        return obj.calculated_amount + self.get_carry_over(obj)
 
 
 class StaffSalarySerializer(serializers.ModelSerializer):
