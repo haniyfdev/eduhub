@@ -3,73 +3,44 @@ from .models import Debt
 
 
 class DebtSerializer(serializers.ModelSerializer):
+    student_id = serializers.CharField(source='group_student.student.id', read_only=True)
     student_name = serializers.SerializerMethodField()
-    student_phone = serializers.SerializerMethodField()
-    student_second_phone = serializers.SerializerMethodField()
-    student_status = serializers.CharField(source='student.status', read_only=True)
-    paid_amount    = serializers.SerializerMethodField()
+    student_phone = serializers.CharField(source='group_student.student.phone', read_only=True)
+    student_second_phone = serializers.CharField(source='group_student.student.second_phone', read_only=True)
+    student_status = serializers.CharField(source='group_student.student.status', read_only=True)
     group_name = serializers.SerializerMethodField()
-    group_id = serializers.SerializerMethodField()
-    course_id = serializers.SerializerMethodField()
-    course_name = serializers.SerializerMethodField()
+    group_id = serializers.CharField(source='group_student.group.id', read_only=True)
+    course_id = serializers.CharField(source='group_student.group.course_id', read_only=True)
+    course_name = serializers.CharField(source='group_student.group.course.name', read_only=True)
+    paid_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Debt
         fields = (
-            'id', 'company', 'student', 'student_name',
-            'student_phone', 'student_second_phone', 'student_status',
+            'id', 'company', 'group_student',
+            'student_id', 'student_name', 'student_phone', 'student_second_phone', 'student_status',
             'group_name', 'group_id', 'course_id', 'course_name',
             'amount', 'paid_amount', 'due_date', 'status', 'updated_at',
         )
-        read_only_fields = ('id', 'company', 'student', 'updated_at')
-
-    def _membership(self, obj):
-        """Return (membership, is_former). Active group if exists, else last historical."""
-        memberships = list(obj.student.group_memberships.all())
-        active = next((m for m in memberships if m.left_at is None), None)
-        if active:
-            return active, False
-        if memberships:
-            last = max(memberships, key=lambda m: m.joined_at)
-            return last, True
-        return None, False
+        read_only_fields = ('id', 'company', 'updated_at')
 
     def get_student_name(self, obj):
-        return f"{obj.student.first_name} {obj.student.last_name}"
-
-    def get_student_phone(self, obj):
-        return obj.student.phone or ''
-
-    def get_student_second_phone(self, obj):
-        return obj.student.second_phone or ''
+        s = obj.group_student.student
+        return f"{s.first_name} {s.last_name}"
 
     def get_group_name(self, obj):
-        m, is_former = self._membership(obj)
-        if not m:
-            return None
-        name = f"{m.group.number}{(m.group.gender_type or '').upper()}"
-        return f"{name} (sobiq)" if is_former else name
+        g = obj.group_student.group
+        name = f"{g.number}{(g.gender_type or '').upper()}"
+        if obj.group_student.left_at:
+            return f"{name} (sobiq)"
+        return name
 
-    def get_group_id(self, obj):
-        m, _ = self._membership(obj)
-        return str(m.group.id) if m else None
-
-    def get_course_id(self, obj):
-        m, _ = self._membership(obj)
-        return str(m.group.course_id) if m else None
-
-    def get_course_name(self, obj):
-        m, _ = self._membership(obj)
-        if m and m.group.course:
-            return m.group.course.name
-        return None
-    
     def get_paid_amount(self, obj):
         from django.db.models import Sum
         from apps.payments.models import Payment
         from decimal import Decimal
         total = Payment.objects.filter(
-            student=obj.student,
+            group_student=obj.group_student,
             company=obj.company,
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         return float(total)

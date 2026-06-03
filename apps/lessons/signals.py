@@ -75,7 +75,7 @@ def auto_promote_trial_student(sender, instance, **kwargs):
 
                 if gs and gs.group.course and gs.group.course.price > 0:
                     debt, debt_created = Debt.objects.get_or_create(
-                        student=student,
+                        group_student=gs,
                         company=student.company,
                         defaults={
                             'amount': gs.group.course.price,

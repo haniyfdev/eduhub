@@ -1,31 +1,44 @@
 from rest_framework import serializers
 from .models import Student
- 
- 
+
+
+class GroupMembershipSerializer(serializers.Serializer):
+    group_student_id = serializers.UUIDField(source='id')
+    group_id = serializers.UUIDField(source='group.id')
+    group_name = serializers.SerializerMethodField()
+    course_name = serializers.CharField(source='group.course.name', read_only=True)
+    course_id = serializers.UUIDField(source='group.course_id', read_only=True)
+    joined_at = serializers.DateTimeField()
+    left_at = serializers.DateTimeField()
+
+    def get_group_name(self, obj):
+        return f"{obj.group.number}{(obj.group.gender_type or '').upper()}"
+
+
 class StudentSerializer(serializers.ModelSerializer):
-    course_name  = serializers.CharField(source='course.name', read_only=True)
-    course_price = serializers.SerializerMethodField()
     current_group    = serializers.SerializerMethodField()
     current_group_id = serializers.SerializerMethodField()
     last_group       = serializers.SerializerMethodField()
+    group_memberships_data = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
         fields = (
             'id', 'company', 'first_name', 'last_name', 'phone', 'second_phone',
-            'birth_date', 'course', 'course_name', 'course_price',
+            'birth_date',
             'current_group', 'current_group_id', 'last_group',
+            'group_memberships_data',
             'referral_source', 'status', 'archive_reason', 'created_at', 'archived_at',
         )
         read_only_fields = ('id', 'company', 'created_at', 'archived_at')
- 
+
     def _active_membership(self, obj):
         return obj.group_memberships.filter(left_at__isnull=True).select_related('group__course').first()
- 
+
     def get_current_group(self, obj):
         m = self._active_membership(obj)
         return m.group.display_name if m else None
- 
+
     def get_current_group_id(self, obj):
         m = self._active_membership(obj)
         return str(m.group.id) if m else None
@@ -37,33 +50,28 @@ class StudentSerializer(serializers.ModelSerializer):
             return f"{gs.group.number}{(gs.group.gender_type or '').upper()}"
         return '—'
 
-    def get_course_price(self, obj):
-        try:
-            return float(obj.course.price) if obj.course and obj.course.price else None
-        except Exception:
-            return None
- 
- 
+    def get_group_memberships_data(self, obj):
+        active = obj.group_memberships.filter(left_at__isnull=True).select_related('group__course')
+        return GroupMembershipSerializer(active, many=True).data
+
+
 class StudentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = (
             'id', 'first_name', 'last_name', 'phone', 'second_phone',
-            'birth_date', 'course', 'referral_source',
+            'birth_date', 'referral_source',
         )
-
         extra_kwargs = {
-            'course': {'required': True, 'allow_null': False},
             'birth_date': {'required': True, 'allow_null': False},
         }
-        
         read_only_fields = ('id',)
- 
- 
+
+
 class StudentUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = (
             'first_name', 'last_name', 'phone', 'second_phone',
-            'birth_date', 'course', 'referral_source', 'status',
+            'birth_date', 'referral_source', 'status',
         )

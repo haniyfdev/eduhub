@@ -2,125 +2,85 @@ from decimal import Decimal
 from django.utils import timezone
 from rest_framework import serializers
 from .models import Payment
+from apps.debts.models import Debt
 
 
 class PaymentSerializer(serializers.ModelSerializer):
-    student_id    = serializers.UUIDField(source='student.id', read_only=True)
+    student_id = serializers.CharField(source='group_student.student.id', read_only=True)
     student_name = serializers.SerializerMethodField()
-    student_phone = serializers.CharField(source='student.phone', read_only=True)
-    course_name = serializers.CharField(source='course.name', read_only=True)
-    group_display = serializers.CharField(source='group.display_name', read_only=True)
+    student_phone = serializers.CharField(source='group_student.student.phone', read_only=True)
+    course_name = serializers.CharField(source='group_student.group.course.name', read_only=True)
+    group_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
         fields = (
-            'id', 'company', 'student', 'student_id', 'student_name', 'student_phone', 
-            'group', 'group_display', 'course', 'course_name',
+            'id', 'company', 'group_student',
+            'student_id', 'student_name', 'student_phone',
+            'group_display', 'course_name',
             'discount', 'amount', 'payment_type', 'note', 'paid_at',
         )
-        read_only_fields = (
-            'id', 'company', 'student', 'group', 'course',
-            'discount', 'amount', 'payment_type', 'note', 'paid_at',
-        )
+        read_only_fields = ('id', 'company', 'paid_at')
 
     def get_student_name(self, obj):
-        return f"{obj.student.first_name} {obj.student.last_name}"
+        s = obj.group_student.student
+        return f"{s.first_name} {s.last_name}"
+
+    def get_group_display(self, obj):
+        g = obj.group_student.group
+        return f"{g.number}{(g.gender_type or '').upper()}"
 
 
 class PaymentCreateSerializer(serializers.Serializer):
-    """
-    Rule 3 — payments are immutable after creation.
-    Business logic §1: validate ownership, apply discount, freeze amount, update debt, send SMS.
-    """
-    student_id = serializers.UUIDField()
-    group_id = serializers.UUIDField(required=False, allow_null=True)
-    course_id = serializers.UUIDField(required=False, allow_null=True)
+    group_student_id = serializers.UUIDField()
     discount_id = serializers.UUIDField(required=False, allow_null=True)
     requested_amount = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=Decimal('0.01'))
     payment_type = serializers.ChoiceField(choices=['cash', 'card', 'transfer'])
     note = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate(self, data):
-        from apps.students.models import Student
-        from apps.groups.models import Group
-        from apps.courses.models import Course
-        from apps.discounts.models import Discount
-
+        from apps.groups.models import GroupStudent
         company = self.context['company']
-
-        # Step 1 — validate all objects belong to same company
         try:
-            data['student'] = Student.objects.get(id=data['student_id'], company=company)
-        except Student.DoesNotExist:
-            raise serializers.ValidationError({'student_id': 'Student not found in this company.'})
+            gs = GroupStudent.objects.select_related(
+                'student', 'group__course'
+            ).get(id=data['group_student_id'], group__company=company)
+            data['group_student'] = gs
+        except GroupStudent.DoesNotExist:
+            raise serializers.ValidationError({'group_student_id': 'Not found'})
 
-        # Step 2 — resolve group (provided or fall back to last group student was in)
-        if data.get('group_id'):
-            try:
-                data['group'] = Group.objects.get(id=data['group_id'], company=company)
-            except Group.DoesNotExist:
-                raise serializers.ValidationError({'group_id': 'Group not found in this company.'})
-        else:
-            from apps.groups.models import GroupStudent
-            last_gs = GroupStudent.objects.filter(
-                student=data['student']
-            ).select_related('group').order_by('-joined_at').first()
-            if not last_gs:
-                raise serializers.ValidationError({'group_id': 'No group history found for this student.'})
-            data['group'] = last_gs.group
-
-        # Step 3 — resolve course (provided or get from group)
-        if data.get('course_id'):
-            try:
-                data['course'] = Course.objects.get(id=data['course_id'], company=company)
-            except Course.DoesNotExist:
-                raise serializers.ValidationError({'course_id': 'Course not found in this company.'})
-        else:
-            data['course'] = data['group'].course
-
-        # Step 2 — apply discount
         final_amount = data['requested_amount']
         discount = None
         if data.get('discount_id'):
+            from apps.discounts.models import Discount
             try:
                 discount = Discount.objects.get(id=data['discount_id'], company=company)
+                if discount.type == 'percent':
+                    final_amount = data['requested_amount'] * (1 - discount.value / 100)
+                else:
+                    final_amount = data['requested_amount'] - discount.value
             except Discount.DoesNotExist:
-                raise serializers.ValidationError({'discount_id': 'Discount not found in this company.'})
-
-            if discount.type == 'percent':
-                final_amount = data['requested_amount'] * (1 - discount.value / 100)
-            else:
-                final_amount = data['requested_amount'] - discount.value
-
-            if final_amount < 0:
-                raise serializers.ValidationError({'discount_id': 'Discount results in a negative amount.'})
+                pass
 
         data['final_amount'] = final_amount
         data['discount'] = discount
 
-        # Cap: payment cannot exceed current outstanding debt
         try:
-            from apps.debts.models import Debt as DebtModel
-            debt_obj = DebtModel.objects.get(student=data['student'])
-            if final_amount > debt_obj.amount:
+            debt = Debt.objects.get(group_student=gs)
+            if final_amount > debt.amount:
                 raise serializers.ValidationError({'amount': "To'lov summasi qarzdan oshib ketdi"})
-        except DebtModel.DoesNotExist:
+        except Debt.DoesNotExist:
             pass
 
         return data
 
     def create(self, validated_data):
-        from apps.debts.models import Debt
-        from apps.notifications.tasks import send_payment_confirmation_sms
-
         company = self.context['company']
+        gs = validated_data['group_student']
 
-        # Step 3 — create immutable Payment record
         payment = Payment.objects.create(
             company=company,
-            student=validated_data['student'],
-            group=validated_data['group'],
-            course=validated_data['course'],
+            group_student=gs,
             discount=validated_data.get('discount'),
             amount=validated_data['final_amount'],
             payment_type=validated_data['payment_type'],
@@ -128,9 +88,8 @@ class PaymentCreateSerializer(serializers.Serializer):
             paid_at=timezone.now(),
         )
 
-        # Step 4 — update Debt record
         try:
-            debt = Debt.objects.get(student=validated_data['student'])
+            debt = Debt.objects.get(group_student=gs)
             debt.amount -= validated_data['final_amount']
             if debt.amount <= 0:
                 debt.status = 'paid'
@@ -139,22 +98,6 @@ class PaymentCreateSerializer(serializers.Serializer):
                 debt.status = 'partial'
             debt.save()
         except Debt.DoesNotExist:
-            pass  # debt not yet assigned (first payment before billing cycle)
-
-        # Step 5 — send confirmation SMS asynchronously (Rule 6)
-        # try:
-        #     send_payment_confirmation_sms.delay(
-        #         str(validated_data['student'].id),
-        #         str(validated_data['final_amount']),
-        #     )
-        # except Exception as e:
-        #     pass
-
-        try: # bu vaqtincha !
-            send_payment_confirmation_sms.apply(
-                args=[str(validated_data['student'].id), str(validated_data['final_amount'])],
-            )
-        except Exception:
             pass
 
         return payment
