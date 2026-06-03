@@ -14,7 +14,6 @@ celery
 redis
 whitenoise
 dj-database-url
-django-apscheduler==0.7.0
 python-dateutil
 
 # Development / testing

@@ -1,6 +1,3 @@
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from django_apscheduler.jobstores import DjangoJobStore
 import logging
 
 logger = logging.getLogger(__name__)
@@ -79,20 +76,3 @@ def generate_monthly_debts():
 
     logger.info('generate_monthly_debts: updated=%d skipped=%d', updated, skipped)
     return updated
-
-
-def start():
-    scheduler = BackgroundScheduler(timezone='Asia/Tashkent')
-    scheduler.add_jobstore(DjangoJobStore(), 'default')
-
-    scheduler.add_job(
-        generate_monthly_debts,
-        trigger=CronTrigger(hour=1, minute=0),
-        id='generate_monthly_debts',
-        name='Roll forward monthly debts for active students',
-        replace_existing=True,
-        jobstore='default',
-    )
-
-    logger.info('Scheduler started — monthly debt rollover at 01:00 daily')
-    scheduler.start()
