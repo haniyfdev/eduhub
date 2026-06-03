@@ -90,7 +90,7 @@ class Command(BaseCommand):
         if salary_type == 'percent':
             from apps.payments.models import Payment
             total_payments = Payment.objects.filter(
-                group__teacher=teacher,
+                group_student__group__teacher=teacher,
                 paid_at__year=month.year,
                 paid_at__month=month.month,
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0')

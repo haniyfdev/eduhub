@@ -19,7 +19,7 @@ class SmsVariablesView(APIView):
         students = Student.objects.filter(
             id__in=student_ids,
             company=company,
-        ).select_related('course', 'company')
+        ).select_related('company')
 
         result = {}
         for student in students:
@@ -36,7 +36,7 @@ class SmsVariablesView(APIView):
             room_number = ''
             lesson_time = ''
             group_name = ''
-            course_name = student.course.name if student.course else ''
+            course_name = ''
 
             if gs:
                 group = gs.group
@@ -58,13 +58,13 @@ class SmsVariablesView(APIView):
                 from django.db.models import Sum
                 from apps.payments.models import Payment
                 total_paid = Payment.objects.filter(
-                    student=student,
+                    group_student__student=student,
                     company=company,
                 ).aggregate(total=Sum('amount'))['total'] or 0
                 amount = str(int(total_paid))
 
                 debt = Debt.objects.filter(
-                    student=student,
+                    group_student__student=student,
                     company=company,
                     status__in=('unpaid', 'partial', 'overdue'),
                 ).first()

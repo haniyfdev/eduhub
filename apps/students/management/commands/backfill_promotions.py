@@ -62,7 +62,7 @@ class Command(BaseCommand):
                         final_amount = course_price
 
                     debt, created = Debt.objects.get_or_create(
-                        student=student,
+                        group_student=gs,
                         company=student.company,
                         defaults={
                             'amount': final_amount,

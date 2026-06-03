@@ -107,10 +107,10 @@ def resolve_variables(body: str, recipient_type: str, recipient_id: str, company
         if recipient_type == 'student':
             from apps.students.models import Student
             try:
-                student = Student.objects.select_related('course', 'company').get(id=recipient_id)
+                student = Student.objects.select_related('company').get(id=recipient_id)
                 variables['student_name'] = f"{student.first_name} {student.last_name}"
                 variables['phone'] = student.phone or ''
-                variables['course_name'] = student.course.name if student.course else ''
+                variables['course_name'] = ''
             except Student.DoesNotExist:
                 return body
 
@@ -166,7 +166,7 @@ def resolve_variables(body: str, recipient_type: str, recipient_id: str, company
         if not variables['amount'] and recipient_type == 'student':
             from apps.debts.models import Debt
             debt = Debt.objects.filter(
-                student_id=recipient_id,
+                group_student__student_id=recipient_id,
                 status__in=['unpaid', 'partial'],
             ).first()
             if debt:

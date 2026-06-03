@@ -39,7 +39,7 @@ def _create_debt(student):
     due_date = timezone.now().date() + timedelta(days=15)
 
     Debt.objects.get_or_create(
-        student=student,
+        group_student=membership,
         company=student.company,
         defaults={
             'amount': course_price,

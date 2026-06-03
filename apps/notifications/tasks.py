@@ -17,7 +17,9 @@ def send_overdue_sms():
     from .models import SmsTemplate
     from .models import Notification
 
-    overdue_debts = Debt.objects.filter(status='overdue').select_related('student__company', 'company')
+    overdue_debts = Debt.objects.filter(status='overdue').select_related(
+        'group_student__student__company', 'company'
+    )
 
     for debt in overdue_debts:
         template = SmsTemplate.objects.filter(
@@ -28,7 +30,7 @@ def send_overdue_sms():
         if not template:
             continue
 
-        student = debt.student
+        student = debt.group_student.student
         gs = student.group_memberships.filter(
             left_at__isnull=True
         ).select_related('group__course', 'group__teacher__user').first()
