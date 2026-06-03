@@ -10,9 +10,7 @@ class Payment(BaseModel):
     ]
 
     company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='payments')
-    student = models.ForeignKey('students.Student', on_delete=models.CASCADE, related_name='payments')
-    group = models.ForeignKey('groups.Group', on_delete=models.CASCADE, related_name='payments')
-    course = models.ForeignKey('courses.Course', on_delete=models.CASCADE, related_name='payments')
+    group_student = models.ForeignKey('groups.GroupStudent', on_delete=models.CASCADE, related_name='payments')
     discount = models.ForeignKey(
         'discounts.Discount', on_delete=models.SET_NULL, null=True, blank=True, related_name='payments'
     )
@@ -25,4 +23,4 @@ class Payment(BaseModel):
         db_table = 'payments'
 
     def __str__(self):
-        return f"{self.student} — {self.amount} — {self.paid_at}"
+        return f"{self.group_student} — {self.amount} — {self.paid_at}"

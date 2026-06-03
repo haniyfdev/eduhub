@@ -10,20 +10,20 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('notes', '0001_initial'),
+        ('discounts', '0001_initial'),
         ('students', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='studentnote',
-            name='author',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='student_notes', to=settings.AUTH_USER_MODEL),
+            model_name='discount',
+            name='created_by',
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='created_discounts', to=settings.AUTH_USER_MODEL),
         ),
         migrations.AddField(
-            model_name='studentnote',
+            model_name='discount',
             name='student',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='notes', to='students.student'),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='discounts', to='students.student'),
         ),
     ]

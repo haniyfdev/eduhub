@@ -9,14 +9,14 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('awards', '0001_initial'),
-        ('students', '0001_initial'),
+        ('debts', '0002_initial'),
+        ('groups', '0001_initial'),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='award',
-            name='issued_to',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='awards', to='students.student'),
+            model_name='debt',
+            name='group_student',
+            field=models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='debt', to='groups.groupstudent'),
         ),
     ]

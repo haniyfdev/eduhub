@@ -11,7 +11,7 @@ class Debt(BaseModel):
     ]
 
     company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='debts')
-    student = models.OneToOneField('students.Student', on_delete=models.CASCADE, related_name='debt')
+    group_student = models.OneToOneField('groups.GroupStudent', on_delete=models.CASCADE, related_name='debt')
     amount          = models.DecimalField(max_digits=15, decimal_places=2)
     due_date        = models.DateField()
     status          = models.CharField(max_length=10, choices=STATUS_CHOICES)
@@ -25,4 +25,4 @@ class Debt(BaseModel):
         db_table = 'debts'
 
     def __str__(self):
-        return f"{self.student} — {self.amount} ({self.status})"
+        return f"{self.group_student} — {self.amount} ({self.status})"

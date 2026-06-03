@@ -22,9 +22,6 @@ class Student(BaseModel):
     last_name = models.CharField(max_length=100)
     phone = models.CharField(max_length=20)
     second_phone = models.CharField(max_length=20, null=True, blank=True)
-    course = models.ForeignKey(
-        'courses.Course', on_delete=models.SET_NULL, null=True, blank=True, related_name='students'
-    )
     birth_date = models.DateField(null=True, blank=True)
     referral_source = models.CharField(max_length=20, choices=REFERRAL_CHOICES, null=True, blank=True)
     ARCHIVE_REASON_CHOICES = [
