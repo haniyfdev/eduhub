@@ -202,7 +202,6 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 last_name=lead.last_name,
                 phone=lead.phone,
                 second_phone=lead.second_phone,
-                course=lead.course,
                 birth_date=lead.birth_date,
                 referral_source=lead.referral_source,
                 status='trial',
