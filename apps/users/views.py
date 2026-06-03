@@ -158,9 +158,9 @@ class UserViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if len(new_password) < 6:
+        if len(new_password) < 8:
             return Response(
-                {'detail': 'New password must be at least 6 characters.'},
+                {'detail': "Parol kamida 8 ta belgidan iborat bo'lishi kerak."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

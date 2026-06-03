@@ -51,6 +51,9 @@ class StaffViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         notes         = request.data.get('notes')
         password      = request.data.get('password', 'parol123')
 
+        if len(password) < 8:
+            return Response({'error': "Parol kamida 8 ta belgidan iborat bo'lishi kerak."}, status=400)
+
         company = get_active_company(request)
 
         if not all([first_name, last_name, phone, role]):
