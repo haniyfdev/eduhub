@@ -10,7 +10,6 @@ def generate_monthly_debts():
     from datetime import date
     from decimal import Decimal
     from dateutil.relativedelta import relativedelta
-    from apps.students.models import Student
     from apps.groups.models import GroupStudent
     from apps.debts.models import Debt
 
@@ -18,42 +17,37 @@ def generate_monthly_debts():
     updated = 0
     skipped = 0
 
-    active_students = Student.objects.filter(
-        status='active'
-    ).select_related('company', 'course')
+    active_enrollments = GroupStudent.objects.filter(
+        group__status='active',
+        left_at__isnull=True,
+    ).select_related('student', 'group__course')
 
-    for student in active_students:
-        # Debt is OneToOneField — each student has exactly one debt record
+    for gs in active_enrollments:
+        if gs.student.status == 'frozen':
+            skipped += 1
+            continue
+
+        if not gs.group.course or not gs.group.course.price:
+            skipped += 1
+            continue
+
         try:
-            debt = Debt.objects.get(student=student)
+            debt = Debt.objects.get(group_student=gs)
         except Debt.DoesNotExist:
             skipped += 1
             continue
 
-        # Only roll forward when the due_date has passed
         if debt.due_date > today:
             skipped += 1
             continue
 
-        # Get current active group to determine course price
-        gs = GroupStudent.objects.filter(
-            student=student,
-            left_at__isnull=True,
-        ).select_related('group__course').first()
-
-        if not gs or not gs.group.course:
-            skipped += 1
-            continue
-
         course_price = gs.group.course.price
-
-        # Check for an active discount this month
         current_month = today.replace(day=1)
         active_discount = None
         try:
             from apps.discounts.models import Discount
             active_discount = Discount.objects.filter(
-                student=student,
+                student=gs.student,
                 course=gs.group.course,
                 start_month__lte=current_month,
                 end_month__gte=current_month,
@@ -68,7 +62,6 @@ def generate_monthly_debts():
             discount_amount = Decimal('0')
             final_amount = Decimal(str(course_price))
 
-        # Advance due_date by 1 month and reset the single debt record
         new_due_date = debt.due_date + relativedelta(months=1)
 
         debt.amount = final_amount
@@ -81,7 +74,7 @@ def generate_monthly_debts():
         updated += 1
         logger.info(
             'Debt rolled forward: %s %s  amount=%s  due=%s',
-            student.first_name, student.last_name, final_amount, new_due_date,
+            gs.student.first_name, gs.student.last_name, final_amount, new_due_date,
         )
 
     logger.info('generate_monthly_debts: updated=%d skipped=%d', updated, skipped)

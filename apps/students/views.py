@@ -15,7 +15,7 @@ from .serializers import StudentSerializer, StudentCreateSerializer, StudentUpda
  
  
 class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
-    queryset = Student.objects.select_related('course').prefetch_related(
+    queryset = Student.objects.prefetch_related(
         Prefetch(
             'group_memberships',
             queryset=__import__(
@@ -36,7 +36,7 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
  
     filter_backends   = [DjangoFilterBackend]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
-    filterset_fields  = ['status', 'course', 'referral_source', 'archive_reason']
+    filterset_fields  = ['status', 'referral_source', 'archive_reason']
     search_fields     = ['first_name', 'last_name']
  
     def get_permissions(self):
@@ -154,19 +154,21 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         from apps.payments.models import Payment
         from apps.payments.serializers import PaymentSerializer
         student = self.get_object()
-        qs = Payment.objects.filter(student=student).order_by('-paid_at')
+        qs = Payment.objects.filter(group_student__student=student).order_by('-paid_at')
         return Response(PaymentSerializer(qs, many=True).data)
  
     @action(detail=True, methods=['get'])
     def debt(self, request, pk=None):
         from apps.debts.models import Debt
         from apps.debts.serializers import DebtSerializer
+        from apps.groups.models import GroupStudent
         student = self.get_object()
-        try:
-            debt = Debt.objects.get(student=student)
-            return Response(DebtSerializer(debt).data)
-        except Debt.DoesNotExist:
-            return Response({'detail': 'No debt record found.'}, status=status.HTTP_404_NOT_FOUND)
+        gs_ids = GroupStudent.objects.filter(
+            student=student,
+            left_at__isnull=True,
+        ).values_list('id', flat=True)
+        debts = Debt.objects.filter(group_student_id__in=gs_ids)
+        return Response(DebtSerializer(debts, many=True).data)
  
     @action(detail=True, methods=['get'])
     def attendance(self, request, pk=None):
@@ -256,7 +258,7 @@ class ArchiveStudentsView(APIView):
             students_qs = Student.objects.filter(
                 company=company,
                 status='archived',
-            ).select_related('course')
+            )
 
             if reason_filter:
                 students_qs = students_qs.filter(archive_reason=reason_filter)
@@ -282,7 +284,7 @@ class ArchiveStudentsView(APIView):
             for s in students_qs.order_by('-archived_at'):
                 gs = GroupStudent.objects.filter(
                     student=s
-                ).order_by('-joined_at').select_related('group').first()
+                ).order_by('-joined_at').select_related('group__course').first()
 
                 group_name = '—'
                 if gs and gs.group:
@@ -296,7 +298,7 @@ class ArchiveStudentsView(APIView):
                     'last_name': s.last_name,
                     'phone': s.phone,
                     'second_phone': s.second_phone,
-                    'course_name': s.course.name if s.course else '—',
+                    'course_name': gs.group.course.name if gs and gs.group and gs.group.course else '—',
                     'group_name': group_name,
                     'birth_date': s.birth_date.strftime('%d/%m/%Y') if s.birth_date else '—',
                     'archive_reason': s.archive_reason,

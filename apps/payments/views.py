@@ -15,9 +15,10 @@ class PaymentViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
     Rule 3 — PATCH and DELETE are forbidden on payments.
     Only GET + POST allowed.
     """
-    queryset = Payment.objects.select_related('student', 'course', 'discount').order_by('-paid_at')
-    filterset_fields = ['student', 'course', 'payment_type']
-    # month filter is handled manually
+    queryset = Payment.objects.select_related(
+        'group_student__student', 'group_student__group__course', 'discount'
+    ).order_by('-paid_at')
+    filterset_fields = ['group_student', 'payment_type']
     http_method_names = ['get', 'post', 'head', 'options']
 
     def get_permissions(self):
@@ -43,12 +44,12 @@ class PaymentViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         search = self.request.query_params.get('search', '')
         if search:
             q = (
-                Q(student__first_name__icontains=search) |
-                Q(student__last_name__icontains=search) |
-                Q(group__gender_type__icontains=search)
+                Q(group_student__student__first_name__icontains=search) |
+                Q(group_student__student__last_name__icontains=search) |
+                Q(group_student__group__gender_type__icontains=search)
             )
             if search.isdigit():
-                q |= Q(group__number=int(search))
+                q |= Q(group_student__group__number=int(search))
             qs = qs.filter(q).distinct()
         return qs
 

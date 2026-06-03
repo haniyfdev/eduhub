@@ -22,10 +22,12 @@ def apply_absent_policy(sender, instance, created, **kwargs):
         return
 
     from apps.debts.models import Debt
+    from apps.groups.models import GroupStudent
 
     try:
-        debt = Debt.objects.get(student=instance.student, company=company)
-    except Debt.DoesNotExist:
+        gs = GroupStudent.objects.get(student=instance.student, group=instance.lesson.group)
+        debt = Debt.objects.get(group_student=gs, company=company)
+    except (GroupStudent.DoesNotExist, Debt.DoesNotExist):
         return
 
     course_price = instance.lesson.group.course.price

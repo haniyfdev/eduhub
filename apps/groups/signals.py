@@ -23,7 +23,7 @@ def create_debt_on_enrollment(sender, instance, created, **kwargs):
     group = instance.group
 
     Debt.objects.get_or_create(
-        student=student,
+        group_student=instance,
         defaults={
             'company': group.company,
             'amount': group.course.price,
