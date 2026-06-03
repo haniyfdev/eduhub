@@ -137,3 +137,33 @@ class UserViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         """GET /api/v1/users/me/ — returns the authenticated user's profile."""
         serializer = UserMeSerializer(request.user)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post', 'patch'], url_path='change-password',
+            permission_classes=[IsAuthenticated])
+    def change_password(self, request):
+        """POST /api/v1/users/change-password/ — change own password."""
+        user = request.user
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+
+        if not old_password or not new_password:
+            return Response(
+                {'detail': 'old_password and new_password are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not user.check_password(old_password):
+            return Response(
+                {'detail': 'Old password is incorrect.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(new_password) < 6:
+            return Response(
+                {'detail': 'New password must be at least 6 characters.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+        return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
