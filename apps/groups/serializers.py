@@ -82,11 +82,31 @@ class GroupCreateSerializer(serializers.ModelSerializer):
         return value
 
 
-class GroupStudentHistorySerializer(serializers.ModelSerializer):
-    group_display = serializers.CharField(source='group.display_name', read_only=True)
-    course_name = serializers.CharField(source='group.course.name', read_only=True)
-    teacher_name = serializers.CharField(source='group.teacher.user.get_full_name', read_only=True)
+class GroupStudentSerializer(serializers.ModelSerializer):
+    student_name         = serializers.SerializerMethodField()
+    student_phone        = serializers.CharField(source='student.phone', read_only=True)
+    student_second_phone = serializers.CharField(source='student.second_phone', read_only=True)
+    student_birth_date   = serializers.DateField(source='student.birth_date', read_only=True)
+    student_status       = serializers.CharField(source='student.status', read_only=True)
 
     class Meta:
         model = GroupStudent
-        fields = ('id', 'group', 'group_display', 'course_name', 'teacher_name', 'joined_at', 'left_at')
+        fields = (
+            'id', 'student', 'group', 'status',
+            'student_name', 'student_phone', 'student_second_phone',
+            'student_birth_date', 'student_status',
+            'joined_at', 'left_at',
+        )
+
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}"
+
+
+class GroupStudentHistorySerializer(serializers.ModelSerializer):
+    group_display = serializers.CharField(source='group.display_name', read_only=True)
+    course_name   = serializers.CharField(source='group.course.name', read_only=True)
+    teacher_name  = serializers.CharField(source='group.teacher.user.get_full_name', read_only=True)
+
+    class Meta:
+        model = GroupStudent
+        fields = ('id', 'group', 'group_display', 'course_name', 'teacher_name', 'status', 'joined_at', 'left_at')

@@ -11,8 +11,9 @@ class GroupMembershipSerializer(serializers.Serializer):
     course_price = serializers.DecimalField(
         source='group.course.price', max_digits=15, decimal_places=2, read_only=True, allow_null=True
     )
+    status    = serializers.CharField(read_only=True)
     joined_at = serializers.DateTimeField()
-    left_at = serializers.DateTimeField()
+    left_at   = serializers.DateTimeField()
 
     def get_group_name(self, obj):
         return f"{obj.group.number}{(obj.group.gender_type or '').upper()}"

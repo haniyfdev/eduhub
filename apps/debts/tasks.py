@@ -31,6 +31,10 @@ def assign_monthly_debts(company_id):
     ).select_related('student', 'group__course')
 
     for gs in active_enrollments:
+        if gs.status == 'trial':
+            continue
+        if gs.status == 'frozen':
+            continue
         if gs.student.status == 'frozen':
             continue
 

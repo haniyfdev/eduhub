@@ -149,7 +149,8 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         for m in all_members:
             s_data = StudentSerializer(m.student).data
             s_data['joined_at'] = m.joined_at.isoformat() if m.joined_at else None
-            s_data['left_at'] = m.left_at.isoformat() if m.left_at else None
+            s_data['left_at']   = m.left_at.isoformat() if m.left_at else None
+            s_data['gs_status'] = m.status
             if m.left_at is not None:
                 current = GroupStudent.objects.filter(
                     student=m.student,
@@ -212,7 +213,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         if GroupStudent.objects.filter(group=group, student=student, left_at__isnull=True).exists():
             return Response({'detail': 'Student is already in this group.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        GroupStudent.objects.create(group=group, student=student, joined_at=timezone.now())
+        GroupStudent.objects.create(group=group, student=student, joined_at=timezone.now(), status='trial')
 
         return Response({'status': 'student added', 'student_id': str(student.id)}, status=status.HTTP_201_CREATED)
 
@@ -267,6 +268,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             group_id=new_group_id,
             student_id=student_id,
             joined_at=timezone.now(),
+            status='trial',
         )
         return Response({'status': 'transferred'})
 

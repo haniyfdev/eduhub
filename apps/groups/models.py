@@ -43,10 +43,18 @@ class Group(BaseModel):
 
 
 class GroupStudent(BaseModel):
-    student = models.ForeignKey('students.Student', on_delete=models.CASCADE, related_name='group_memberships')
-    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='memberships')
+    STATUS_CHOICES = [
+        ('trial',  'Trial'),
+        ('active', 'Active'),
+        ('frozen', 'Frozen'),
+        ('left',   'Left'),
+    ]
+
+    student   = models.ForeignKey('students.Student', on_delete=models.CASCADE, related_name='group_memberships')
+    group     = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='memberships')
+    status    = models.CharField(max_length=20, choices=STATUS_CHOICES, default='trial')
     joined_at = models.DateTimeField()
-    left_at = models.DateTimeField(null=True, blank=True)
+    left_at   = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'group_students'
