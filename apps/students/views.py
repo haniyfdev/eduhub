@@ -48,7 +48,8 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     
     def get_queryset(self):
         from django.db.models import Q
-        qs = super().get_queryset().filter(status__in=['active', 'archived', 'frozen'])
+        allowed = ['active', 'archived', 'frozen', 'trial'] if self.action == 'archive' else ['active', 'archived', 'frozen']
+        qs = super().get_queryset().filter(status__in=allowed)
         search = self.request.query_params.get('search', '')
         if search:
             q = (
