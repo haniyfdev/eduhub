@@ -8,6 +8,9 @@ class GroupMembershipSerializer(serializers.Serializer):
     group_name = serializers.SerializerMethodField()
     course_name = serializers.CharField(source='group.course.name', read_only=True)
     course_id = serializers.UUIDField(source='group.course_id', read_only=True)
+    course_price = serializers.DecimalField(
+        source='group.course.price', max_digits=15, decimal_places=2, read_only=True, allow_null=True
+    )
     joined_at = serializers.DateTimeField()
     left_at = serializers.DateTimeField()
 
