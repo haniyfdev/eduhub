@@ -16,9 +16,10 @@ def create_debt_on_enrollment(sender, instance, created, **kwargs):
     if instance.left_at is not None:
         return
 
-    student = instance.student
-    if student.status != 'active':
-        return  # trial/pending students get no debt on enrollment
+    # Do NOT create debt for trial students.
+    # Debt is created by auto_promote_trial_student when gs.status → 'active'.
+    if instance.status != 'active':
+        return
 
     group = instance.group
 
