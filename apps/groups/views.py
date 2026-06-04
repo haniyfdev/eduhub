@@ -219,32 +219,56 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='remove-student')
     def remove_student(self, request, pk=None):
-        """POST /api/v1/groups/{id}/remove-student/  body: {student_id}"""
+        """POST /api/v1/groups/{id}/remove-student/  body: {student_id, reason?}"""
         if request.user.role == 'teacher':
             return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
         from apps.students.models import Student
+        from django.db import transaction
         group = self.get_object()
         student_id = request.data.get('student_id')
         if not student_id:
             return Response({'detail': 'student_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        membership = GroupStudent.objects.filter(
+        gs = GroupStudent.objects.filter(
             group=group, student_id=student_id, left_at__isnull=True
         ).first()
-        if not membership:
+        if not gs:
             return Response({'detail': 'Active membership not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        membership.left_at = timezone.now()
-        membership.save(update_fields=['left_at'])
+        with transaction.atomic():
+            gs.status = 'left'
+            gs.left_at = timezone.now()
+            gs.save(update_fields=['status', 'left_at'])
 
-        # Removed from group → archived (stays in students list, not leads)
-        student = membership.student
-        if student.status != 'archived':
-            student.status = 'archived'
-            student.archived_at = timezone.now()
-            student.save(update_fields=['status', 'archived_at'])
+            other_active = GroupStudent.objects.filter(
+                student_id=student_id,
+                left_at__isnull=True,
+                status__in=['active', 'trial'],
+            ).exclude(id=gs.id).exists()
 
-        return Response({'status': 'student removed'})
+            student_archived = False
+            if not other_active:
+                student = Student.objects.get(id=student_id)
+                reason = request.data.get('reason', 'dropped_out')
+                if reason not in ['graduated', 'dropped_out']:
+                    reason = 'dropped_out'
+
+                student.status = 'archived'
+                student.archive_reason = reason
+                student.archived_at = timezone.now()
+                student.save(update_fields=['status', 'archive_reason', 'archived_at'])
+
+                if student.lead_id:
+                    from apps.leads.models import Lead
+                    if reason == 'dropped_out':
+                        Lead.objects.filter(id=student.lead_id).update(status='ignored')
+                    else:
+                        Lead.objects.filter(id=student.lead_id).delete()
+                    Student.objects.filter(id=student.id).update(lead=None)
+
+                student_archived = True
+
+        return Response({'status': 'removed', 'student_archived': student_archived})
 
     @action(detail=True, methods=['post'], url_path='transfer-student')
     def transfer_student(self, request, pk=None):
