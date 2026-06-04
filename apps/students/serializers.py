@@ -55,8 +55,15 @@ class StudentSerializer(serializers.ModelSerializer):
         return '—'
 
     def get_group_memberships_data(self, obj):
-        active = obj.group_memberships.filter(left_at__isnull=True).select_related('group__course')
-        return GroupMembershipSerializer(active, many=True).data
+        if obj.status == 'archived':
+            memberships = obj.group_memberships.select_related(
+                'group__course'
+            ).order_by('-joined_at')[:1]
+        else:
+            memberships = obj.group_memberships.filter(
+                left_at__isnull=True
+            ).select_related('group__course')
+        return GroupMembershipSerializer(memberships, many=True).data
 
 
 class StudentCreateSerializer(serializers.ModelSerializer):
