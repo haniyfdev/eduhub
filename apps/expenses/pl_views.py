@@ -250,7 +250,7 @@ class ProfitLossTeachersView(APIView):
             result = []
             for teacher in teachers:
                 revenue = Payment.objects.filter(
-                    **cf, group__teacher=teacher,
+                    **cf, group_student__group__teacher=teacher,
                     paid_at__date__gte=from_date, paid_at__date__lte=to_date,
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
@@ -284,12 +284,12 @@ class IncomeByCourseView(APIView):
         result = (
             Payment.objects
             .filter(**cf, paid_at__date__gte=from_date, paid_at__date__lte=to_date)
-            .values('course__name')
+            .values('group_student__group__course__name')
             .annotate(total=Sum('amount'))
             .order_by('-total')
         )
         return Response([
-            {'course': r['course__name'] or 'Nomsiz', 'amount': r['total']}
+            {'course': r['group_student__group__course__name'] or 'Nomsiz', 'amount': r['total']}
             for r in result
         ])
 
