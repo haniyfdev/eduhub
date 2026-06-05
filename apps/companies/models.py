@@ -19,15 +19,21 @@ class CompanySettings(BaseModel):
         ('prorate', 'Prorated Salary'),
         ('none', 'No Salary'),
     ]
+    ARCHIVE_BILLING_CHOICES = [
+        ('manual',     'Manual'),
+        ('per_lesson', 'Per Lesson'),
+        ('per_day',    'Per Day'),
+    ]
 
     company = models.OneToOneField(
         'Company',
         on_delete=models.CASCADE,
         related_name='settings',
     )
-    billing_type = models.CharField(max_length=20, choices=BILLING_TYPE_CHOICES, default='monthly')
-    absent_policy = models.CharField(max_length=20, choices=ABSENT_POLICY_CHOICES, default='ignore')
-    teacher_contract_break_policy = models.CharField(max_length=20, choices=CONTRACT_BREAK_CHOICES, default='full')
+    billing_type                   = models.CharField(max_length=20, choices=BILLING_TYPE_CHOICES, default='monthly')
+    absent_policy                  = models.CharField(max_length=20, choices=ABSENT_POLICY_CHOICES, default='ignore')
+    teacher_contract_break_policy  = models.CharField(max_length=20, choices=CONTRACT_BREAK_CHOICES, default='full')
+    archive_billing_type           = models.CharField(max_length=20, choices=ARCHIVE_BILLING_CHOICES, default='manual')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

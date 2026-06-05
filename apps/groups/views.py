@@ -224,22 +224,86 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
         from apps.students.models import Student
         from django.db import transaction
+        from decimal import Decimal, ROUND_HALF_UP
         group = self.get_object()
         student_id = request.data.get('student_id')
+        reason = request.data.get('reason', 'dropped_out')
         if not student_id:
             return Response({'detail': 'student_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         gs = GroupStudent.objects.filter(
             group=group, student_id=student_id, left_at__isnull=True
-        ).first()
+        ).select_related('group__course', 'group__company').first()
         if not gs:
             return Response({'detail': 'Active membership not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         with transaction.atomic():
+            now = timezone.now()
             gs.status = 'left'
-            gs.left_at = timezone.now()
+            gs.left_at = now
             gs.save(update_fields=['status', 'left_at'])
 
+            # ── Archive billing calculation ──────────────────────────────
+            from apps.companies.models import CompanySettings
+            from apps.debts.models import Debt
+            company_settings, _ = CompanySettings.objects.get_or_create(company=group.company)
+            billing_type = company_settings.archive_billing_type
+            course_price = gs.group.course.price if gs.group.course else None
+
+            if course_price and billing_type != 'manual':
+                course_price = Decimal(str(course_price))
+                calculated_amount = None
+
+                if billing_type == 'per_lesson':
+                    from apps.lessons.models import Lesson
+                    from apps.attendance.models import Attendance
+                    month_start = now.date().replace(day=1)
+                    total_lessons = Lesson.objects.filter(
+                        group=group,
+                        date__gte=month_start,
+                        date__lte=now.date(),
+                    ).count()
+                    attended = Attendance.objects.filter(
+                        student_id=student_id,
+                        lesson__group=group,
+                        lesson__date__gte=month_start,
+                        lesson__date__lte=now.date(),
+                        status__in=['present', 'late'],
+                    ).count()
+                    if total_lessons > 0:
+                        per_lesson = course_price / total_lessons
+                        calculated_amount = (per_lesson * attended).quantize(
+                            Decimal('1000'), rounding=ROUND_HALF_UP
+                        )
+
+                elif billing_type == 'per_day':
+                    import calendar
+                    month_start = now.date().replace(day=1)
+                    effective_start = max(gs.joined_at.date(), month_start)
+                    days_in_group = (now.date() - effective_start).days + 1
+                    days_in_month = calendar.monthrange(now.year, now.month)[1]
+                    if days_in_month > 0:
+                        per_day = course_price / days_in_month
+                        calculated_amount = (per_day * days_in_group).quantize(
+                            Decimal('1000'), rounding=ROUND_HALF_UP
+                        )
+
+                if calculated_amount is not None:
+                    from datetime import timedelta
+                    existing = Debt.objects.filter(group_student=gs).first()
+                    if existing:
+                        existing.amount = calculated_amount
+                        existing.save(update_fields=['amount'])
+                    else:
+                        Debt.objects.create(
+                            group_student=gs,
+                            company=group.company,
+                            amount=calculated_amount,
+                            status='unpaid',
+                            due_date=now.date() + timedelta(days=15),
+                        )
+
+            # ── Archive student if no other active groups remain ─────────
             other_active = GroupStudent.objects.filter(
                 student_id=student_id,
                 left_at__isnull=True,
@@ -249,13 +313,11 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             student_archived = False
             if not other_active:
                 student = Student.objects.get(id=student_id)
-                reason = request.data.get('reason', 'dropped_out')
                 if reason not in ['graduated', 'dropped_out']:
                     reason = 'dropped_out'
-
                 student.status = 'archived'
                 student.archive_reason = reason
-                student.archived_at = timezone.now()
+                student.archived_at = now
                 student.save(update_fields=['status', 'archive_reason', 'archived_at'])
 
                 if student.lead_id:
@@ -268,7 +330,11 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
                 student_archived = True
 
-        return Response({'status': 'removed', 'student_archived': student_archived})
+        return Response({
+            'status': 'removed',
+            'student_archived': student_archived,
+            'billing_type': billing_type,
+        })
 
     @action(detail=True, methods=['post'], url_path='transfer-student')
     def transfer_student(self, request, pk=None):

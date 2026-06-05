@@ -26,6 +26,7 @@ class CompanySettingsSerializer(serializers.ModelSerializer):
         model = CompanySettings
         fields = (
             'id', 'company', 'billing_type', 'absent_policy',
-            'teacher_contract_break_policy', 'created_at', 'updated_at',
+            'teacher_contract_break_policy', 'archive_billing_type',
+            'created_at', 'updated_at',
         )
         read_only_fields = ('id', 'company', 'created_at', 'updated_at')
