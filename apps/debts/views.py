@@ -111,15 +111,53 @@ class DebtViewSet(
             unit_label        = 'day'
 
         elif billing_type == 'per_lesson':
-            total_lessons_count = lessons.count()
-            attended            = sum(1 for a in attendance_data if a['status'] in ['present', 'late'])
-            if total_lessons_count > 0:
-                per_unit          = (course_price / total_lessons_count).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
-                units_count       = attended
-                total_units       = total_lessons_count
-                raw_amount        = per_unit * attended
-                calculated_amount = raw_amount.quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
-            unit_label = 'lesson'
+            from dateutil.relativedelta import relativedelta
+            import datetime
+
+            # Map Uzbek day abbreviations → Python weekday numbers (Mon=0 … Sun=6)
+            DAY_MAP = {
+                'du': 0, 'dushanba': 0,
+                'se': 1, 'seshanba': 1,
+                'ch': 2, 'cho': 2, 'chorshanba': 2,
+                'pa': 3, 'payshanba': 3,
+                'ju': 4, 'juma': 4,
+                'sh': 5, 'sha': 5, 'shanba': 5,
+                'ya': 6, 'yakshanba': 6,
+            }
+
+            # Parse group schedule: "Du,Se,Ch 16:00" → {0, 1, 2}
+            lesson_weekdays: set[int] = set()
+            schedule_str = gs.group.schedule or ''
+            days_part = schedule_str.split(' ')[0]  # "Du,Se,Ch"
+            for abbr in days_part.split(','):
+                key = abbr.strip().lower()
+                if key in DAY_MAP:
+                    lesson_weekdays.add(DAY_MAP[key])
+
+            # One full billing cycle: joined_at → joined_at + 1 month
+            cycle_start = joined_at
+            cycle_end   = cycle_start + relativedelta(months=1)
+
+            # Count lesson days in [cycle_start, cycle_end)
+            total_lessons_in_cycle = 0
+            if lesson_weekdays:
+                d = cycle_start
+                while d < cycle_end:
+                    if d.weekday() in lesson_weekdays:
+                        total_lessons_in_cycle += 1
+                    d += datetime.timedelta(days=1)
+
+            if total_lessons_in_cycle == 0:
+                total_lessons_in_cycle = 12  # fallback
+
+            attended = sum(1 for a in attendance_data if a['status'] in ['present', 'late'])
+
+            per_unit          = (course_price / total_lessons_in_cycle).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            units_count       = attended
+            total_units       = total_lessons_in_cycle
+            raw_amount        = per_unit * attended
+            calculated_amount = raw_amount.quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
+            unit_label        = 'lesson'
 
         # Auto-update debt for non-manual modes
         if billing_type != 'manual' and calculated_amount is not None:
