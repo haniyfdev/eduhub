@@ -1,6 +1,7 @@
 from django.db.models import Q
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,7 +21,10 @@ class DebtViewSet(
 ):
     queryset = Debt.objects.select_related(
         'group_student__student', 'group_student__group__course', 'discount'
-    ).order_by('due_date')
+    ).order_by('due_date', '-amount', 'group_student__student__first_name')
+    filter_backends = [OrderingFilter]
+    ordering_fields = ['due_date', 'amount', 'group_student__student__first_name']
+    ordering = ['due_date', '-amount', 'group_student__student__first_name']
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
 
     def get_permissions(self):
