@@ -50,11 +50,12 @@ class GroupStudent(BaseModel):
         ('left',   'Left'),
     ]
 
-    student   = models.ForeignKey('students.Student', on_delete=models.CASCADE, related_name='group_memberships')
-    group     = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='memberships')
-    status    = models.CharField(max_length=20, choices=STATUS_CHOICES, default='trial')
-    joined_at = models.DateTimeField()
-    left_at   = models.DateTimeField(null=True, blank=True)
+    student              = models.ForeignKey('students.Student', on_delete=models.CASCADE, related_name='group_memberships')
+    group                = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='memberships')
+    status               = models.CharField(max_length=20, choices=STATUS_CHOICES, default='trial')
+    archive_billing_type = models.CharField(max_length=20, null=True, blank=True)
+    joined_at            = models.DateTimeField()
+    left_at              = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'group_students'

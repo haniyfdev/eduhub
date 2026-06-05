@@ -239,15 +239,17 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
         with transaction.atomic():
             now = timezone.now()
-            gs.status = 'left'
-            gs.left_at = now
-            gs.save(update_fields=['status', 'left_at'])
-
-            # ── Archive billing calculation ──────────────────────────────
             from apps.companies.models import CompanySettings
-            from apps.debts.models import Debt
             company_settings, _ = CompanySettings.objects.get_or_create(company=group.company)
             billing_type = company_settings.archive_billing_type
+
+            gs.status = 'left'
+            gs.left_at = now
+            gs.archive_billing_type = billing_type
+            gs.save(update_fields=['status', 'left_at', 'archive_billing_type'])
+
+            # ── Archive billing calculation ──────────────────────────────
+            from apps.debts.models import Debt
             course_price = gs.group.course.price if gs.group.course else None
 
             if course_price and billing_type != 'manual':

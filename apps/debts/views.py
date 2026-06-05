@@ -62,7 +62,6 @@ class DebtViewSet(
     def last_month_attendance(self, request, pk=None):
         from apps.attendance.models import Attendance
         from apps.lessons.models import Lesson
-        from apps.companies.models import CompanySettings
         from decimal import Decimal, ROUND_HALF_UP
 
         debt = self.get_object()
@@ -76,8 +75,7 @@ class DebtViewSet(
         month_start     = left_at.replace(day=1)
         effective_start = max(joined_at, month_start)
 
-        settings, _  = CompanySettings.objects.get_or_create(company=gs.group.company)
-        billing_type = settings.archive_billing_type
+        billing_type = gs.archive_billing_type or 'manual'
         course_price = Decimal(str(gs.group.course.price)) if gs.group.course else Decimal('0')
 
         lessons = Lesson.objects.filter(
@@ -96,6 +94,7 @@ class DebtViewSet(
             })
 
         calculated_amount = None
+        raw_amount        = None
         per_unit          = None
         units_count       = None
         total_units       = None
@@ -107,7 +106,8 @@ class DebtViewSet(
             per_unit          = (course_price / days_in_month).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
             units_count       = days_in_group
             total_units       = days_in_month
-            calculated_amount = (per_unit * days_in_group).quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
+            raw_amount        = per_unit * days_in_group
+            calculated_amount = raw_amount.quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
             unit_label        = 'day'
 
         elif billing_type == 'per_lesson':
@@ -117,7 +117,8 @@ class DebtViewSet(
                 per_unit          = (course_price / total_lessons_count).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
                 units_count       = attended
                 total_units       = total_lessons_count
-                calculated_amount = (per_unit * attended).quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
+                raw_amount        = per_unit * attended
+                calculated_amount = raw_amount.quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
             unit_label = 'lesson'
 
         # Auto-update debt for non-manual modes
@@ -134,6 +135,7 @@ class DebtViewSet(
             'group_name':        gs.group.display_name,
             'student_name':      f"{gs.student.first_name} {gs.student.last_name}",
             'billing_type':      billing_type,
+            'raw_amount':        float(raw_amount) if raw_amount is not None else None,
             'calculated_amount': float(calculated_amount) if calculated_amount is not None else None,
             'per_unit':          float(per_unit) if per_unit is not None else None,
             'units_count':       units_count,

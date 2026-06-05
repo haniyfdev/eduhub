@@ -13,8 +13,9 @@ class DebtSerializer(serializers.ModelSerializer):
     course_id            = serializers.CharField(source='group_student.group.course_id', read_only=True)
     course_name          = serializers.CharField(source='group_student.group.course.name', read_only=True)
     paid_amount          = serializers.SerializerMethodField()
-    group_student_status  = serializers.CharField(source='group_student.status', read_only=True)
-    group_student_left_at = serializers.DateTimeField(source='group_student.left_at', read_only=True)
+    group_student_status   = serializers.CharField(source='group_student.status', read_only=True)
+    group_student_left_at  = serializers.DateTimeField(source='group_student.left_at', read_only=True)
+    archive_billing_type   = serializers.CharField(source='group_student.archive_billing_type', read_only=True, allow_null=True)
 
     class Meta:
         model = Debt
@@ -23,7 +24,7 @@ class DebtSerializer(serializers.ModelSerializer):
             'student_id', 'student_name', 'student_phone', 'student_second_phone', 'student_status',
             'group_name', 'group_id', 'course_id', 'course_name',
             'amount', 'paid_amount', 'due_date', 'status', 'updated_at',
-            'group_student_status', 'group_student_left_at',
+            'group_student_status', 'group_student_left_at', 'archive_billing_type',
         )
         read_only_fields = ('id', 'company', 'updated_at')
 
