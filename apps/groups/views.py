@@ -293,10 +293,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 if calculated_amount is not None:
                     from datetime import timedelta
                     existing = Debt.objects.filter(group_student=gs).first()
-                    if existing:
-                        existing.amount = calculated_amount
-                        existing.save(update_fields=['amount'])
-                    else:
+                    if not existing:
                         Debt.objects.create(
                             group_student=gs,
                             company=group.company,
@@ -304,6 +301,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                             status='unpaid',
                             due_date=now.date() + timedelta(days=15),
                         )
+                    # Never overwrite existing debt.amount — partial payments may already be recorded
 
             # ── Archive student if no other active groups remain ─────────
             other_active = GroupStudent.objects.filter(
