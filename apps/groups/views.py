@@ -273,7 +273,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                     if total_lessons > 0:
                         per_lesson = course_price / total_lessons
                         calculated_amount = (per_lesson * attended).quantize(
-                            Decimal('1000'), rounding=ROUND_HALF_UP
+                            Decimal('1E+3'), rounding=ROUND_HALF_UP
                         )
 
                 elif billing_type == 'per_day':
@@ -285,7 +285,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                     if days_in_month > 0:
                         per_day = course_price / days_in_month
                         calculated_amount = (per_day * days_in_group).quantize(
-                            Decimal('1000'), rounding=ROUND_HALF_UP
+                            Decimal('1E+3'), rounding=ROUND_HALF_UP
                         )
 
                 if calculated_amount is not None:

@@ -107,7 +107,7 @@ class DebtViewSet(
             per_unit          = (course_price / days_in_month).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
             units_count       = days_in_group
             total_units       = days_in_month
-            calculated_amount = (per_unit * days_in_group).quantize(Decimal('1000'), rounding=ROUND_HALF_UP)
+            calculated_amount = (per_unit * days_in_group).quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
             unit_label        = 'day'
 
         elif billing_type == 'per_lesson':
@@ -117,7 +117,7 @@ class DebtViewSet(
                 per_unit          = (course_price / total_lessons_count).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
                 units_count       = attended
                 total_units       = total_lessons_count
-                calculated_amount = (per_unit * attended).quantize(Decimal('1000'), rounding=ROUND_HALF_UP)
+                calculated_amount = (per_unit * attended).quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
             unit_label = 'lesson'
 
         # Auto-update debt for non-manual modes
