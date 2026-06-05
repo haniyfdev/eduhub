@@ -62,6 +62,8 @@ class DebtViewSet(
     def last_month_attendance(self, request, pk=None):
         from apps.attendance.models import Attendance
         from apps.lessons.models import Lesson
+        from apps.companies.models import CompanySettings
+        from decimal import Decimal, ROUND_HALF_UP
 
         debt = self.get_object()
         gs   = debt.group_student
@@ -69,8 +71,14 @@ class DebtViewSet(
         if not gs.left_at:
             return Response({'error': 'Student has not left the group'}, status=400)
 
-        left_at     = gs.left_at.date()
-        month_start = left_at.replace(day=1)
+        left_at         = gs.left_at.date()
+        joined_at       = gs.joined_at.date()
+        month_start     = left_at.replace(day=1)
+        effective_start = max(joined_at, month_start)
+
+        settings, _  = CompanySettings.objects.get_or_create(company=gs.group.company)
+        billing_type = settings.archive_billing_type
+        course_price = Decimal(str(gs.group.course.price)) if gs.group.course else Decimal('0')
 
         lessons = Lesson.objects.filter(
             group=gs.group,
@@ -78,23 +86,59 @@ class DebtViewSet(
             date__lte=left_at,
         ).order_by('date')
 
-        result = []
+        attendance_data = []
         for lesson in lessons:
             att = Attendance.objects.filter(lesson=lesson, student=gs.student).first()
-            result.append({
+            attendance_data.append({
                 'lesson_id': str(lesson.id),
                 'date':      lesson.date.strftime('%d/%m/%Y'),
                 'status':    att.status if att else 'absent',
             })
 
+        calculated_amount = None
+        per_unit          = None
+        units_count       = None
+        total_units       = None
+        unit_label        = None
+
+        if billing_type == 'per_day':
+            days_in_month = 30
+            days_in_group = (left_at - effective_start).days + 1
+            per_unit          = (course_price / days_in_month).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            units_count       = days_in_group
+            total_units       = days_in_month
+            calculated_amount = (per_unit * days_in_group).quantize(Decimal('1000'), rounding=ROUND_HALF_UP)
+            unit_label        = 'day'
+
+        elif billing_type == 'per_lesson':
+            total_lessons_count = lessons.count()
+            attended            = sum(1 for a in attendance_data if a['status'] in ['present', 'late'])
+            if total_lessons_count > 0:
+                per_unit          = (course_price / total_lessons_count).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+                units_count       = attended
+                total_units       = total_lessons_count
+                calculated_amount = (per_unit * attended).quantize(Decimal('1000'), rounding=ROUND_HALF_UP)
+            unit_label = 'lesson'
+
+        # Auto-update debt for non-manual modes
+        if billing_type != 'manual' and calculated_amount is not None:
+            debt.amount = calculated_amount
+            debt.save(update_fields=['amount'])
+
         return Response({
-            'lessons':      result,
-            'month_start':  month_start.strftime('%d/%m/%Y'),
-            'left_at':      left_at.strftime('%d/%m/%Y'),
-            'course_price': float(gs.group.course.price) if gs.group.course else 0,
-            'course_name':  gs.group.course.name if gs.group.course else '—',
-            'group_name':   gs.group.display_name,
-            'student_name': f"{gs.student.first_name} {gs.student.last_name}",
+            'lessons':           attendance_data,
+            'period_start':      effective_start.strftime('%d/%m/%Y'),
+            'left_at':           left_at.strftime('%d/%m/%Y'),
+            'course_price':      float(course_price),
+            'course_name':       gs.group.course.name if gs.group.course else '—',
+            'group_name':        gs.group.display_name,
+            'student_name':      f"{gs.student.first_name} {gs.student.last_name}",
+            'billing_type':      billing_type,
+            'calculated_amount': float(calculated_amount) if calculated_amount is not None else None,
+            'per_unit':          float(per_unit) if per_unit is not None else None,
+            'units_count':       units_count,
+            'total_units':       total_units,
+            'unit_label':        unit_label,
         })
 
     @action(detail=True, methods=['post'], url_path='send-sms')
