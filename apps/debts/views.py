@@ -58,6 +58,45 @@ class DebtViewSet(
 
         return qs
 
+    @action(detail=True, methods=['get'], url_path='last-month-attendance')
+    def last_month_attendance(self, request, pk=None):
+        from apps.attendance.models import Attendance
+        from apps.lessons.models import Lesson
+
+        debt = self.get_object()
+        gs   = debt.group_student
+
+        if not gs.left_at:
+            return Response({'error': 'Student has not left the group'}, status=400)
+
+        left_at     = gs.left_at.date()
+        month_start = left_at.replace(day=1)
+
+        lessons = Lesson.objects.filter(
+            group=gs.group,
+            date__gte=month_start,
+            date__lte=left_at,
+        ).order_by('date')
+
+        result = []
+        for lesson in lessons:
+            att = Attendance.objects.filter(lesson=lesson, student=gs.student).first()
+            result.append({
+                'lesson_id': str(lesson.id),
+                'date':      lesson.date.strftime('%d/%m/%Y'),
+                'status':    att.status if att else 'absent',
+            })
+
+        return Response({
+            'lessons':      result,
+            'month_start':  month_start.strftime('%d/%m/%Y'),
+            'left_at':      left_at.strftime('%d/%m/%Y'),
+            'course_price': float(gs.group.course.price) if gs.group.course else 0,
+            'course_name':  gs.group.course.name if gs.group.course else '—',
+            'group_name':   gs.group.display_name,
+            'student_name': f"{gs.student.first_name} {gs.student.last_name}",
+        })
+
     @action(detail=True, methods=['post'], url_path='send-sms')
     def send_sms(self, request, pk=None):
         from apps.notifications.tasks import send_sms_task
