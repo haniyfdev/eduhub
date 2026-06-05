@@ -163,11 +163,6 @@ class DebtViewSet(
             calculated_amount = (raw_amount / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
             unit_label        = 'lesson'
 
-        # Auto-update debt for non-manual modes
-        if billing_type != 'manual' and calculated_amount is not None:
-            debt.amount = calculated_amount
-            debt.save(update_fields=['amount'])
-
         return Response({
             'lessons':           attendance_data,
             'period_start':      effective_start.strftime('%d/%m/%Y'),
