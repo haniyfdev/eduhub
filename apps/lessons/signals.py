@@ -120,6 +120,11 @@ def auto_promote_trial_student(sender, instance, **kwargs):
                     discount_amt = Decimal('0')
                     final_amount = Decimal(str(course_price))
 
+                from apps.lessons.models import Lesson as LessonModel
+                from dateutil.relativedelta import relativedelta
+                first_lesson = LessonModel.objects.filter(group=gs.group).order_by('date').first()
+                debt_due = first_lesson.date + relativedelta(months=1) if first_lesson else date.today() + timedelta(days=15)
+
                 debt, debt_created = Debt.objects.get_or_create(
                     group_student=gs,
                     company=student.company,
@@ -127,7 +132,7 @@ def auto_promote_trial_student(sender, instance, **kwargs):
                         'amount': final_amount,
                         'discount': active_discount,
                         'discount_amount': discount_amt,
-                        'due_date': date.today() + timedelta(days=15),
+                        'due_date': debt_due,
                         'status': 'unpaid',
                     },
                 )

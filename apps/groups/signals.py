@@ -23,12 +23,21 @@ def create_debt_on_enrollment(sender, instance, created, **kwargs):
 
     group = instance.group
 
+    # due_date = first lesson date + 1 month, fallback to 15 days
+    from apps.lessons.models import Lesson
+    from dateutil.relativedelta import relativedelta
+    first_lesson = Lesson.objects.filter(group=group).order_by('date').first()
+    if first_lesson:
+        due_date = first_lesson.date + relativedelta(months=1)
+    else:
+        due_date = date.today() + timedelta(days=15)
+
     Debt.objects.get_or_create(
         group_student=instance,
         defaults={
             'company': group.company,
             'amount': group.course.price,
-            'due_date': date.today() + timedelta(days=15),
+            'due_date': due_date,
             'status': 'unpaid',
         },
     )

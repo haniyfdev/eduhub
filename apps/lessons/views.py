@@ -35,13 +35,18 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         return LessonSerializer
 
     def perform_create(self, serializer):
+        from rest_framework.exceptions import ValidationError
+        group       = serializer.validated_data['group']
+        lesson_date = serializer.validated_data.get('date')
+
+        if lesson_date and Lesson.objects.filter(group=group, date=lesson_date).exists():
+            raise ValidationError({'date': "Bu guruhda bu sanada allaqachon dars mavjud."})
+
         try:
             user = self.request.user
             if user.role == 'teacher':
                 teacher = user.teacher
             else:
-                # boss/manager/admin providing a group — derive teacher from group
-                group = serializer.validated_data['group']
                 teacher = group.teacher
             serializer.save(teacher=teacher)
         except Exception as e:

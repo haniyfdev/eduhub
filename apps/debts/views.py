@@ -62,7 +62,7 @@ class DebtViewSet(
     def last_month_attendance(self, request, pk=None):
         from apps.attendance.models import Attendance
         from apps.lessons.models import Lesson
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_HALF_UP, ROUND_FLOOR
 
         debt = self.get_object()
         gs   = debt.group_student
@@ -107,7 +107,7 @@ class DebtViewSet(
             units_count       = days_in_group
             total_units       = days_in_month
             raw_amount        = per_unit * days_in_group
-            calculated_amount = raw_amount.quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
+            calculated_amount = (raw_amount / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
             unit_label        = 'day'
 
         elif billing_type == 'per_lesson':
@@ -156,7 +156,7 @@ class DebtViewSet(
             units_count       = attended
             total_units       = total_lessons_in_cycle
             raw_amount        = per_unit * attended
-            calculated_amount = raw_amount.quantize(Decimal('1E+3'), rounding=ROUND_HALF_UP)
+            calculated_amount = (raw_amount / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
             unit_label        = 'lesson'
 
         # Auto-update debt for non-manual modes
