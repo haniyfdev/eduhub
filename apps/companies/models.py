@@ -15,9 +15,10 @@ class CompanySettings(BaseModel):
         ('penalty', 'Add Penalty'),
     ]
     CONTRACT_BREAK_CHOICES = [
-        ('full', 'Full Salary'),
-        ('prorate', 'Prorated Salary'),
-        ('none', 'No Salary'),
+        ('full',       'Full month'),
+        ('per_lesson', 'Per Lesson'),
+        ('per_day',    'Per Day'),
+        ('manual',     'Manual'),
     ]
     ARCHIVE_BILLING_CHOICES = [
         ('manual',     'Manual'),

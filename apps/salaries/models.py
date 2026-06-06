@@ -23,6 +23,7 @@ class TeacherSalary(BaseModel):
     status            = models.CharField(max_length=10, choices=STATUS_CHOICES, default='unpaid')
     is_paid           = models.BooleanField(default=False)
     paid_at           = models.DateTimeField(null=True, blank=True)
+    archive_billing_type = models.CharField(max_length=20, null=True, blank=True)
     note              = models.TextField(null=True, blank=True)
     created_at        = models.DateTimeField(auto_now_add=True)
 

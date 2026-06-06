@@ -50,7 +50,9 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 pass
 
         from django.db.models import Q
-        qs = qs.filter(teacher__status='active').distinct()
+        qs = qs.filter(
+            Q(teacher__status='active') | Q(teacher__status='archived', archive_billing_type__isnull=False)
+        ).distinct()
         return qs.filter(
             Q(calculated_amount__gt=0) | Q(paid_amount__gt=0)
         )
@@ -59,6 +61,98 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         if self.action in ('generate', 'calculate', 'pay', 'mark_paid', 'bulk_pay'):
             return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
+
+    @action(detail=True, methods=['get'], url_path='last-month-breakdown')
+    def last_month_breakdown(self, request, pk=None):
+        """Read-only breakdown of an archived teacher's prorated salary."""
+        from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
+        import datetime as dt
+        from apps.lessons.models import Lesson
+
+        salary = self.get_object()
+        teacher = salary.teacher
+
+        if teacher.status != 'archived' or not teacher.archived_at:
+            return Response({'error': 'Teacher is not archived'}, status=400)
+
+        billing_type = salary.archive_billing_type or 'manual'
+        archived_at  = teacher.archived_at.date()
+        month_start  = salary.month  # already the 1st of the month
+        base_amount  = Decimal(str(salary.calculated_amount))
+
+        raw_amount        = None
+        calculated_amount = None
+        per_unit          = None
+        units_count       = None
+        total_units       = None
+        unit_label        = None
+
+        if billing_type == 'per_day':
+            days_in_month = 30
+            days_worked   = (archived_at - month_start).days + 1
+            per_unit          = (base_amount / days_in_month).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            units_count       = days_worked
+            total_units       = days_in_month
+            raw_amount        = per_unit * days_worked
+            calculated_amount = (raw_amount / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
+            unit_label        = 'day'
+
+        elif billing_type == 'per_lesson' and salary.group_id:
+            from dateutil.relativedelta import relativedelta
+
+            taught = Lesson.objects.filter(
+                group_id=salary.group_id,
+                teacher=teacher,
+                date__gte=month_start,
+                date__lte=archived_at,
+                status='finished',
+            ).count()
+
+            DAY_MAP = {
+                'du': 0, 'se': 1, 'ch': 2, 'cho': 2,
+                'pa': 3, 'ju': 4, 'sh': 5, 'sha': 5, 'ya': 6,
+            }
+            schedule_str = salary.group.schedule or ''
+            days_part = schedule_str.split(' ')[0]
+            lesson_weekdays: set = set()
+            for abbr in days_part.split(','):
+                key = abbr.strip().lower()
+                if key in DAY_MAP:
+                    lesson_weekdays.add(DAY_MAP[key])
+
+            total_in_cycle = 0
+            if lesson_weekdays:
+                d = month_start
+                cycle_end = month_start + relativedelta(months=1)
+                while d < cycle_end:
+                    if d.weekday() in lesson_weekdays:
+                        total_in_cycle += 1
+                    d += dt.timedelta(days=1)
+            if total_in_cycle == 0:
+                total_in_cycle = 12
+
+            per_unit          = (base_amount / total_in_cycle).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            units_count       = taught
+            total_units       = total_in_cycle
+            raw_amount        = per_unit * taught
+            calculated_amount = (raw_amount / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
+            unit_label        = 'lesson'
+
+        return Response({
+            'teacher_name':      f"{teacher.user.first_name} {teacher.user.last_name}",
+            'group_name':        salary.group.display_name if salary.group else None,
+            'course_name':       salary.group.course.name if salary.group and salary.group.course else None,
+            'month':             month_start.strftime('%Y-%m'),
+            'archived_at':       archived_at.strftime('%d/%m/%Y'),
+            'billing_type':      billing_type,
+            'base_amount':       float(base_amount),
+            'raw_amount':        float(raw_amount) if raw_amount is not None else None,
+            'calculated_amount': float(calculated_amount) if calculated_amount is not None else None,
+            'per_unit':          float(per_unit) if per_unit is not None else None,
+            'units_count':       units_count,
+            'total_units':       total_units,
+            'unit_label':        unit_label,
+        })
 
     def list(self, request, *args, **kwargs):
         """Return salaries grouped by teacher."""
@@ -74,6 +168,8 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                     'teacher_id': tid,
                     'teacher_name': sdata['teacher_name'],
                     'teacher_subject': sdata['teacher_subject'],
+                    'teacher_status': salary.teacher.status,
+                    'teacher_archived_at': salary.teacher.archived_at.isoformat() if salary.teacher.archived_at else None,
                     'salary_type': sdata['salary_type'],
                     'salary_percent': sdata['salary_percent'],
                     'fixed_amount': sdata['fixed_amount'],
@@ -96,20 +192,21 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             entry['total_owed'] += total_owed
 
             entry['groups'].append({
-                'salary_id':        str(salary.id),
-                'group_id':         sdata['group_id'],
-                'group_name':       sdata['group_name'],
-                'course_name':      sdata['course_name'],
-                'calculated_amount': float(salary.calculated_amount),
-                'paid_amount':      float(salary.paid_amount),
-                'carry_over':       carry_over,
-                'total_owed':       total_owed,
-                'status':           salary.status,
-                'due_date':         sdata['due_date'],
-                'first_active_date': sdata['first_active_date'],
-                'student_count':    sdata['student_count'],
-                'course_price':     float(sdata['course_price'] or 0),
-                'kpi_amount':       kpi,
+                'salary_id':          str(salary.id),
+                'group_id':           sdata['group_id'],
+                'group_name':         sdata['group_name'],
+                'course_name':        sdata['course_name'],
+                'calculated_amount':  float(salary.calculated_amount),
+                'paid_amount':        float(salary.paid_amount),
+                'carry_over':         carry_over,
+                'total_owed':         total_owed,
+                'status':             salary.status,
+                'due_date':           sdata['due_date'],
+                'first_active_date':  sdata['first_active_date'],
+                'student_count':      sdata['student_count'],
+                'course_price':       float(sdata['course_price'] or 0),
+                'kpi_amount':         kpi,
+                'archive_billing_type': salary.archive_billing_type,
             })
 
         # For fixed salary: replace null-group entry with teacher's actual active groups (display only)

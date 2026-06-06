@@ -77,15 +77,86 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
+        from decimal import Decimal, ROUND_FLOOR
         teacher = self.get_object()
+        now = timezone.now()
+
         teacher.status = 'archived'
-        teacher.archived_at = timezone.now()
+        teacher.archived_at = now
         teacher.user.status = 'archived'
         teacher.user.is_active = False
-        teacher.user.closed_at = timezone.now()
+        teacher.user.closed_at = now
         teacher.user.save()
         teacher.save()
-        return Response({'status': 'archived'})
+
+        # Snapshot billing type and recalculate current-month salary if needed
+        from apps.companies.models import CompanySettings
+        from apps.salaries.models import TeacherSalary
+        settings, _ = CompanySettings.objects.get_or_create(company=teacher.company)
+        billing_type = settings.teacher_contract_break_policy  # full/per_lesson/per_day/manual
+
+        current_month = now.date().replace(day=1)
+        salaries = TeacherSalary.objects.filter(
+            teacher=teacher,
+            month=current_month,
+            company=teacher.company,
+        )
+
+        for salary in salaries:
+            salary.archive_billing_type = billing_type
+
+            if billing_type == 'per_day' and salary.calculated_amount > 0:
+                days_in_month = 30
+                days_worked = (now.date() - current_month).days + 1
+                per_day = salary.calculated_amount / days_in_month
+                raw = per_day * days_worked
+                salary.calculated_amount = (raw / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
+
+            elif billing_type == 'per_lesson' and salary.calculated_amount > 0 and salary.group_id:
+                from apps.lessons.models import Lesson
+                from dateutil.relativedelta import relativedelta
+
+                # Count lessons teacher actually taught this month
+                taught = Lesson.objects.filter(
+                    group_id=salary.group_id,
+                    teacher=teacher,
+                    date__gte=current_month,
+                    date__lte=now.date(),
+                    status='finished',
+                ).count()
+
+                # Count total scheduled lessons in full billing cycle via schedule string
+                DAY_MAP = {
+                    'du': 0, 'se': 1, 'ch': 2, 'cho': 2,
+                    'pa': 3, 'ju': 4, 'sh': 5, 'sha': 5, 'ya': 6,
+                }
+                import datetime as dt
+                schedule_str = salary.group.schedule or '' if salary.group else ''
+                days_part = schedule_str.split(' ')[0]
+                lesson_weekdays: set = set()
+                for abbr in days_part.split(','):
+                    key = abbr.strip().lower()
+                    if key in DAY_MAP:
+                        lesson_weekdays.add(DAY_MAP[key])
+
+                total_in_cycle = 0
+                if lesson_weekdays:
+                    d = current_month
+                    cycle_end = current_month + relativedelta(months=1)
+                    while d < cycle_end:
+                        if d.weekday() in lesson_weekdays:
+                            total_in_cycle += 1
+                        d += dt.timedelta(days=1)
+                if total_in_cycle == 0:
+                    total_in_cycle = 12
+
+                per_lesson = salary.calculated_amount / total_in_cycle
+                raw = per_lesson * taught
+                salary.calculated_amount = (raw / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
+
+            salary.save(update_fields=['archive_billing_type', 'calculated_amount'])
+
+        return Response({'status': 'archived', 'billing_type': billing_type})
 
     @action(detail=True, methods=['post'])
     def restore(self, request, pk=None):
