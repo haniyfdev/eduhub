@@ -49,7 +49,7 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         if self.action in ('unfreeze',):
             return [IsBossOrManager()]
         if self.action in ('create', 'update', 'partial_update', 'archive', 'freeze',
-                           'add_student', 'remove_student', 'transfer_student'):
+                           'add_student', 'remove_student', 'transfer_student', 'change_teacher'):
             return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
 
@@ -361,6 +361,38 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             status='trial',
         )
         return Response({'status': 'transferred'})
+
+    @action(detail=True, methods=['post'], url_path='change-teacher')
+    def change_teacher(self, request, pk=None):
+        """POST /api/v1/groups/{id}/change-teacher/  body: {teacher_id}"""
+        import datetime
+        from apps.teachers.models import Teacher as TeacherModel
+        from apps.lessons.models import Lesson
+
+        group = self.get_object()
+        new_teacher_id = request.data.get('teacher_id')
+        if not new_teacher_id:
+            return Response({'detail': 'teacher_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            new_teacher = TeacherModel.objects.get(id=new_teacher_id, company=group.company, status='active')
+        except TeacherModel.DoesNotExist:
+            return Response({'detail': 'Teacher not found or not active.'}, status=status.HTTP_404_NOT_FOUND)
+
+        old_teacher = group.teacher
+        if old_teacher and str(old_teacher.id) != str(new_teacher.id):
+            # Snapshot current-month salary for old teacher so their record persists
+            from apps.salaries.logic import calculate_teacher_salary
+            month = datetime.date.today().replace(day=1)
+            calculate_teacher_salary(old_teacher, month)
+
+            # Reassign all pending (untaught) lessons in this group to the new teacher
+            Lesson.objects.filter(group=group, status='pending').update(teacher=new_teacher)
+
+        group.teacher = new_teacher
+        group.save(update_fields=['teacher'])
+
+        return Response(GroupSerializer(group).data)
 
     @action(detail=True, methods=['post'])
     def freeze(self, request, pk=None):

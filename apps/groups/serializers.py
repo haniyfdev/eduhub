@@ -42,6 +42,7 @@ class GroupSerializer(serializers.ModelSerializer):
                 'id': str(t.id),
                 'first_name': t.user.first_name,
                 'last_name': t.user.last_name,
+                'status': t.status,
             }
         return None
 
