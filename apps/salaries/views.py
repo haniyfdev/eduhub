@@ -119,6 +119,12 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             calculated_amount = (raw_amount / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
             unit_label        = 'day'
 
+        elif billing_type == 'per_lesson' and not salary.group_id:
+            # Fixed salary type: no group attached, per-lesson proration is not possible.
+            # Archive action also skipped proration for the same reason; calculated_amount
+            # was left as the full fixed amount. Treat as 'full' so the modal renders it.
+            billing_type = 'full'
+
         elif billing_type == 'per_lesson' and salary.group_id:
             from dateutil.relativedelta import relativedelta
 
@@ -251,8 +257,10 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             else:
                 entry['overall_status'] = 'unpaid'
 
-            if entry['salary_type'] == 'fixed':
-                # Replace null-group salary entry with actual active groups for display
+            if entry['salary_type'] == 'fixed' and entry.get('teacher_status') != 'archived':
+                # Active fixed-salary teacher: replace null-group entry with actual groups for display.
+                # Skip for archived teachers — their groups may have been reassigned and the
+                # null-group entry is needed to carry the salary_id for the breakdown modal.
                 actual_groups = Group.objects.filter(
                     teacher_id=entry['teacher_id'],
                     status='active',
@@ -267,7 +275,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                         'group_id':          str(g.id),
                         'group_name':        g.display_name,
                         'course_name':       g.course.name if g.course else None,
-                        'calculated_amount': 0,  # fixed amount shown at teacher level
+                        'calculated_amount': 0,
                         'paid_amount':       0,
                         'carry_over':        0,
                         'total_owed':        0,
@@ -278,7 +286,8 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                         'course_price':      float(g.course.price) if g.course else 0,
                         'kpi_amount':        0,
                     })
-                entry['groups'] = display_groups
+                if display_groups:
+                    entry['groups'] = display_groups
 
             results.append(entry)
 
