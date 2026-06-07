@@ -77,8 +77,30 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
 
         billing_type = salary.archive_billing_type or 'manual'
         archived_at  = teacher.archived_at.date()
-        month_start  = salary.month  # already the 1st of the month
-        base_amount  = Decimal(str(salary.calculated_amount))
+        month_start  = salary.month
+
+        # full_monthly is the salary BEFORE archive proration — total_amount is never overwritten
+        full_monthly = Decimal(str(salary.total_amount))
+
+        # Teacher salary settings for display
+        salary_type     = teacher.salary_type          # 'fixed' | 'percent' | 'per_student'
+        salary_percent  = float(teacher.salary_percent or 0)
+        per_student_amt = float(teacher.per_student_amt or 0)
+
+        # Students and revenue for display chain (uses current enrollment as approximation)
+        students_count = 0
+        group_revenue  = 0.0
+        course_price   = 0.0
+        if salary.group_id:
+            from apps.groups.models import GroupStudent
+            students_count = GroupStudent.objects.filter(
+                group_id=salary.group_id,
+                left_at__isnull=True,
+                student__status__in=['active', 'trial', 'frozen'],
+            ).count()
+            if salary.group.course and salary.group.course.price:
+                course_price  = float(salary.group.course.price)
+                group_revenue = students_count * course_price
 
         raw_amount        = None
         calculated_amount = None
@@ -90,7 +112,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         if billing_type == 'per_day':
             days_in_month = 30
             days_worked   = (archived_at - month_start).days + 1
-            per_unit          = (base_amount / days_in_month).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            per_unit          = (full_monthly / days_in_month).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
             units_count       = days_worked
             total_units       = days_in_month
             raw_amount        = per_unit * days_worked
@@ -131,7 +153,8 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             if total_in_cycle == 0:
                 total_in_cycle = 12
 
-            per_unit          = (base_amount / total_in_cycle).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            # Divide full_monthly (not already-prorated amount) to get correct per-lesson rate
+            per_unit          = (full_monthly / total_in_cycle).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
             units_count       = taught
             total_units       = total_in_cycle
             raw_amount        = per_unit * taught
@@ -139,19 +162,26 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             unit_label        = 'lesson'
 
         return Response({
-            'teacher_name':      f"{teacher.user.first_name} {teacher.user.last_name}",
-            'group_name':        salary.group.display_name if salary.group else None,
-            'course_name':       salary.group.course.name if salary.group and salary.group.course else None,
-            'month':             month_start.strftime('%Y-%m'),
-            'archived_at':       archived_at.strftime('%d/%m/%Y'),
-            'billing_type':      billing_type,
-            'base_amount':       float(base_amount),
-            'raw_amount':        float(raw_amount) if raw_amount is not None else None,
-            'calculated_amount': float(calculated_amount) if calculated_amount is not None else None,
-            'per_unit':          float(per_unit) if per_unit is not None else None,
-            'units_count':       units_count,
-            'total_units':       total_units,
-            'unit_label':        unit_label,
+            'teacher_name':        f"{teacher.user.first_name} {teacher.user.last_name}",
+            'group_name':          salary.group.display_name if salary.group else None,
+            'course_name':         salary.group.course.name if salary.group and salary.group.course else None,
+            'month':               month_start.strftime('%Y-%m'),
+            'archived_at':         archived_at.strftime('%d/%m/%Y'),
+            'billing_type':        billing_type,
+            'salary_type':         salary_type,
+            'salary_percent':      salary_percent,
+            'per_student_amt':     per_student_amt,
+            'students_count':      students_count,
+            'group_revenue':       group_revenue,
+            'course_price':        course_price,
+            'full_monthly_salary': float(full_monthly),
+            'base_amount':         float(full_monthly),  # kept for compat — equals full_monthly
+            'raw_amount':          float(raw_amount) if raw_amount is not None else None,
+            'calculated_amount':   float(calculated_amount) if calculated_amount is not None else None,
+            'per_unit':            float(per_unit) if per_unit is not None else None,
+            'units_count':         units_count,
+            'total_units':         total_units,
+            'unit_label':          unit_label,
         })
 
     def list(self, request, *args, **kwargs):
