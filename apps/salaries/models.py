@@ -24,6 +24,7 @@ class TeacherSalary(BaseModel):
     is_paid           = models.BooleanField(default=False)
     paid_at           = models.DateTimeField(null=True, blank=True)
     archive_billing_type = models.CharField(max_length=20, null=True, blank=True)
+    manual_amount_set = models.BooleanField(default=False)
     note              = models.TextField(null=True, blank=True)
     created_at        = models.DateTimeField(auto_now_add=True)
 

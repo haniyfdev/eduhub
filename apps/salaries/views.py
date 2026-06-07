@@ -76,8 +76,9 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         except Exception:
             return Response({'error': 'Invalid amount'}, status=400)
         salary.calculated_amount = amount
-        salary.save(update_fields=['calculated_amount'])
-        return Response({'calculated_amount': float(salary.calculated_amount)})
+        salary.manual_amount_set = True
+        salary.save(update_fields=['calculated_amount', 'manual_amount_set'])
+        return Response({'calculated_amount': float(salary.calculated_amount), 'manual_amount_set': True})
 
     @action(detail=True, methods=['get'], url_path='last-month-breakdown')
     def last_month_breakdown(self, request, pk=None):
@@ -212,6 +213,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             'units_count':         units_count,
             'total_units':         total_units,
             'unit_label':          unit_label,
+            'manual_amount_set':   salary.manual_amount_set,
         })
 
     def list(self, request, *args, **kwargs):
