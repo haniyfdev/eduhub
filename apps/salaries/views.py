@@ -225,11 +225,34 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
 
             entry = teacher_map[tid]
             carry_over = float(sdata['carry_over'] or 0)
-            total_owed = float(sdata['total_owed'] or salary.calculated_amount)
             kpi = float(salary.kpi_amount or 0)
 
+            # Self-heal: fixed-salary teachers archived with per_lesson policy were not prorated
+            # at archive time. Recompute per_day, fix the DB record, and use the correct value.
+            display_calculated = float(salary.calculated_amount)
+            if (
+                salary.teacher.status == 'archived'
+                and sdata.get('salary_type') == 'fixed'
+                and salary.archive_billing_type == 'per_lesson'
+                and salary.teacher.archived_at
+                and salary.total_amount
+            ):
+                from decimal import Decimal, ROUND_FLOOR as _FLOOR
+                _archived = salary.teacher.archived_at.date()
+                _start = salary.month
+                _days = max((_archived - _start).days + 1, 1)
+                _base = Decimal(str(salary.total_amount))
+                _raw = (_base / 30) * _days
+                _correct = int((_raw / 1000).to_integral_value(rounding=_FLOOR) * 1000)
+                if salary.calculated_amount != _correct:
+                    salary.calculated_amount = _correct
+                    salary.save(update_fields=['calculated_amount'])
+                display_calculated = float(_correct)
+
+            total_owed = display_calculated + carry_over
+
             entry['kpi_amount'] = max(float(entry['kpi_amount']), kpi)
-            entry['total_calculated'] += float(salary.calculated_amount)
+            entry['total_calculated'] += display_calculated
             entry['total_paid'] += float(salary.paid_amount)
             entry['total_owed'] += total_owed
 
@@ -238,7 +261,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 'group_id':           sdata['group_id'],
                 'group_name':         sdata['group_name'],
                 'course_name':        sdata['course_name'],
-                'calculated_amount':  float(salary.calculated_amount),
+                'calculated_amount':  display_calculated,
                 'paid_amount':        float(salary.paid_amount),
                 'carry_over':         carry_over,
                 'total_owed':         total_owed,

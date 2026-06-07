@@ -105,14 +105,19 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         for salary in salaries:
             salary.archive_billing_type = billing_type
 
-            if billing_type == 'per_day' and salary.calculated_amount > 0:
+            # Fixed salary has no per-lesson schedule; redirect to per_day proration
+            effective_billing = billing_type
+            if teacher.salary_type == 'fixed' and billing_type == 'per_lesson':
+                effective_billing = 'per_day'
+
+            if effective_billing == 'per_day' and salary.calculated_amount > 0:
                 days_in_month = 30
                 days_worked = (now.date() - current_month).days + 1
                 per_day = salary.calculated_amount / days_in_month
                 raw = per_day * days_worked
                 salary.calculated_amount = (raw / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
 
-            elif billing_type == 'per_lesson' and salary.calculated_amount > 0 and salary.group_id:
+            elif effective_billing == 'per_lesson' and salary.calculated_amount > 0 and salary.group_id:
                 from apps.lessons.models import Lesson
                 from dateutil.relativedelta import relativedelta
 
