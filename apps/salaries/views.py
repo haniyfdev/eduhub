@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.utils import timezone
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
@@ -58,9 +59,25 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         )
 
     def get_permissions(self):
-        if self.action in ('generate', 'calculate', 'pay', 'mark_paid', 'bulk_pay'):
+        if self.action in ('generate', 'calculate', 'pay', 'mark_paid', 'bulk_pay', 'set_amount'):
             return [IsBossOrManagerOrAdmin()]
         return [IsAuthenticated()]
+
+    @action(detail=True, methods=['post'], url_path='set-amount')
+    def set_amount(self, request, pk=None):
+        """Manually set calculated_amount for a manual-billed archived salary."""
+        salary = self.get_object()
+        if salary.archive_billing_type != 'manual':
+            return Response({'error': 'Only manual billing type can be set this way'}, status=400)
+        try:
+            amount = Decimal(str(request.data.get('amount', '')))
+            if amount < 0:
+                raise ValueError
+        except Exception:
+            return Response({'error': 'Invalid amount'}, status=400)
+        salary.calculated_amount = amount
+        salary.save(update_fields=['calculated_amount'])
+        return Response({'calculated_amount': float(salary.calculated_amount)})
 
     @action(detail=True, methods=['get'], url_path='last-month-breakdown')
     def last_month_breakdown(self, request, pk=None):
