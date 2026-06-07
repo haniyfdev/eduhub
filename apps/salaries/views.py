@@ -102,6 +102,11 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 course_price  = float(salary.group.course.price)
                 group_revenue = students_count * course_price
 
+        # Fixed salary teachers cannot do per_lesson (no group/schedule to divide by).
+        # Use per_day instead so the modal shows a meaningful calculation.
+        if teacher.salary_type == 'fixed' and billing_type == 'per_lesson':
+            billing_type = 'per_day'
+
         raw_amount        = None
         calculated_amount = None
         per_unit          = None
@@ -173,7 +178,8 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             'course_name':         salary.group.course.name if salary.group and salary.group.course else None,
             'month':               month_start.strftime('%Y-%m'),
             'archived_at':         archived_at.strftime('%d/%m/%Y'),
-            'billing_type':        billing_type,
+            'billing_type':          billing_type,
+            'billing_type_original': salary.archive_billing_type,
             'salary_type':         salary_type,
             'salary_percent':      salary_percent,
             'per_student_amt':     per_student_amt,
