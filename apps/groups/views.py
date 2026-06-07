@@ -491,7 +491,10 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                 'start_time': str(group.start_time)[:5] if group.start_time else '—',
                 'end_time': str(group.end_time)[:5] if group.end_time else '—',
                 'schedule': group.schedule or '—',
-                'students_count': group.memberships.filter(left_at__isnull=True).count(),
+                'students_count': group.memberships.filter(
+                    left_at__isnull=True,
+                    status__in=['active', 'trial'],
+                ).count(),
                 'lesson_status': lesson_status,
             })
 
