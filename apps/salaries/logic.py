@@ -1,4 +1,3 @@
-import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from dateutil.relativedelta import relativedelta
 
@@ -30,17 +29,16 @@ _reconcile_status = _reconcile
 def calculate_teacher_salary(teacher, month):
     """Calculate salary for a teacher. Fixed type = one record; percent/per_student = per group.
 
-    percent:     salary = group_payments_sum × (percent / 100)
-    per_student: salary = group_payments_sum × (per_student_amt / course_price)
-    fixed:       salary = fixed_amount  (unchanged, ignores payments)
+    percent:     salary = group_debt_sum × (percent / 100)
+    per_student: salary = group_debt_sum × (per_student_amt / course_price)
+    fixed:       salary = fixed_amount  (unchanged, ignores debt records)
 
-    Billing period for payment-based types:
-      start = prev month's TeacherSalary.created_at (if exists), else first day of month
-      end   = today (date the button is pressed)
+    group_debt_sum = sum of Debt.amount for all GroupStudents in the group
+    where Debt.due_date falls within the billing month being calculated.
     """
     from .models import TeacherSalary
     from apps.groups.models import Group
-    from apps.payments.models import Payment
+    from apps.debts.models import Debt
     from django.db.models import Sum
 
     if teacher.status in ('frozen', 'archived'):
@@ -49,7 +47,6 @@ def calculate_teacher_salary(teacher, month):
     month = month.replace(day=1)
     prev_month = (month - relativedelta(months=1)).replace(day=1)
     kpi_amount = teacher.kpi_bonus or Decimal('0')
-    today = datetime.date.today()
 
     # ── FIXED: ONE salary record, no group, no carry_over ───────────────────
     # Each month is independent — same as staff fixed salary
@@ -85,7 +82,7 @@ def calculate_teacher_salary(teacher, month):
     first_group = True
 
     for group in active_groups:
-        # Previous month's salary — used for both carry_over and billing period start
+        # Previous month's salary — used for carry_over only
         prev = TeacherSalary.objects.filter(
             teacher=teacher,
             company=teacher.company,
@@ -93,22 +90,18 @@ def calculate_teacher_salary(teacher, month):
             group=group,
         ).first()
 
-        # Billing period: from when last month's salary was generated to today
-        period_start = prev.created_at.date() if prev else month
-        period_end = today
-
-        # Sum of actual payments received for this group in the billing period
-        agg = Payment.objects.filter(
+        # Sum of debts owed by students in this group for the billing month
+        agg = Debt.objects.filter(
             group_student__group=group,
             company=teacher.company,
-            paid_at__date__gte=period_start,
-            paid_at__date__lte=period_end,
+            due_date__year=month.year,
+            due_date__month=month.month,
         ).aggregate(total=Sum('amount'))
-        group_payments_sum = Decimal(str(agg['total'] or 0))
+        group_debt_sum = Decimal(str(agg['total'] or 0))
 
         if teacher.salary_type == 'percent':
             coefficient = (teacher.salary_percent or Decimal('0')) / 100
-            base_amount = group_payments_sum * coefficient
+            base_amount = group_debt_sum * coefficient
 
         elif teacher.salary_type == 'per_student':
             course_price = (
@@ -118,7 +111,7 @@ def calculate_teacher_salary(teacher, month):
             )
             if course_price and course_price > 0:
                 coefficient = (teacher.per_student_amt or Decimal('0')) / course_price
-                base_amount = group_payments_sum * coefficient
+                base_amount = group_debt_sum * coefficient
             else:
                 base_amount = Decimal('0')
 
