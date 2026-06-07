@@ -132,7 +132,13 @@ Group `name` is auto-generated as `f"{number}{gender_type}"` (e.g. `"1a"`). Neve
 
 ### Teacher Salary Calculation (Rule 9)
 
-`apps/salaries/logic.py` — for `percent` and `per_student` types, use active student count × course price. Never use the `Payment` table.
+`apps/salaries/logic.py` — for `percent` and `per_student` types, salary is based on actual payments received for the group in the billing period (prev month salary `created_at` → today), queried from the `Payment` table.
+
+- `fixed`:       `fixed_amount` as-is — no payment lookup
+- `percent`:     `group_payments_sum × (percent / 100)`
+- `per_student`: `group_payments_sum × (per_student_amt / course_price)`
+
+Never use active student count for salary calculation.
 
 ### P&L Dashboard
 
@@ -158,7 +164,7 @@ Supabase PostgreSQL via **session pooler** (IPv4). Direct connection URL is IPv6
 | 6 | SMS always async via Celery |
 | 7 | All money fields are `DecimalField(max_digits=15, decimal_places=2)` |
 | 8 | Group name is auto-generated, never user-supplied |
-| 9 | Teacher salary uses student count, not payment records |
+| 9 | Teacher salary (percent/per_student) uses actual group payments, not student count |
 | 10 | Salary records auto-mirror to Expense via `post_save` signal |
 | 11 | Billing is per-company, every 30 days from subscription start |
 | 12 | Supabase RLS must be disabled; all access control in Django |

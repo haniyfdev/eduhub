@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from dateutil.relativedelta import relativedelta
 
@@ -27,9 +28,20 @@ _reconcile_status = _reconcile
 
 
 def calculate_teacher_salary(teacher, month):
-    """Calculate salary for a teacher. Fixed type = one record; percent/per_student = per group."""
+    """Calculate salary for a teacher. Fixed type = one record; percent/per_student = per group.
+
+    percent:     salary = group_payments_sum × (percent / 100)
+    per_student: salary = group_payments_sum × (per_student_amt / course_price)
+    fixed:       salary = fixed_amount  (unchanged, ignores payments)
+
+    Billing period for payment-based types:
+      start = prev month's TeacherSalary.created_at (if exists), else first day of month
+      end   = today (date the button is pressed)
+    """
     from .models import TeacherSalary
-    from apps.groups.models import Group, GroupStudent
+    from apps.groups.models import Group
+    from apps.payments.models import Payment
+    from django.db.models import Sum
 
     if teacher.status in ('frozen', 'archived'):
         return []
@@ -37,6 +49,7 @@ def calculate_teacher_salary(teacher, month):
     month = month.replace(day=1)
     prev_month = (month - relativedelta(months=1)).replace(day=1)
     kpi_amount = teacher.kpi_bonus or Decimal('0')
+    today = datetime.date.today()
 
     # ── FIXED: ONE salary record, no group, no carry_over ───────────────────
     # Each month is independent — same as staff fixed salary
@@ -72,29 +85,43 @@ def calculate_teacher_salary(teacher, month):
     first_group = True
 
     for group in active_groups:
+        # Previous month's salary — used for both carry_over and billing period start
+        prev = TeacherSalary.objects.filter(
+            teacher=teacher,
+            company=teacher.company,
+            month=prev_month,
+            group=group,
+        ).first()
+
+        # Billing period: from when last month's salary was generated to today
+        period_start = prev.created_at.date() if prev else month
+        period_end = today
+
+        # Sum of actual payments received for this group in the billing period
+        agg = Payment.objects.filter(
+            group_student__group=group,
+            company=teacher.company,
+            paid_at__date__gte=period_start,
+            paid_at__date__lte=period_end,
+        ).aggregate(total=Sum('amount'))
+        group_payments_sum = Decimal(str(agg['total'] or 0))
+
         if teacher.salary_type == 'percent':
-            enrollments = GroupStudent.objects.filter(
-                group=group,
-                left_at__isnull=True,
-                student__status__in=['active', 'trial', 'frozen'],
-            ).select_related('group__course')
-            total_revenue = sum(
-                gs.group.course.price
-                for gs in enrollments
-                if gs.group.course and gs.group.course.price
-            )
-            base_amount = Decimal(str(total_revenue)) * (
-                (teacher.salary_percent or Decimal('0')) / 100
-            )
+            coefficient = (teacher.salary_percent or Decimal('0')) / 100
+            base_amount = group_payments_sum * coefficient
+
         elif teacher.salary_type == 'per_student':
-            student_count = GroupStudent.objects.filter(
-                group=group,
-                left_at__isnull=True,
-                student__status='active',
-            ).count()
-            base_amount = Decimal(str(student_count)) * (
-                teacher.per_student_amt or Decimal('0')
+            course_price = (
+                Decimal(str(group.course.price))
+                if group.course and group.course.price
+                else None
             )
+            if course_price and course_price > 0:
+                coefficient = (teacher.per_student_amt or Decimal('0')) / course_price
+                base_amount = group_payments_sum * coefficient
+            else:
+                base_amount = Decimal('0')
+
         else:
             base_amount = Decimal('0')
 
@@ -103,12 +130,6 @@ def calculate_teacher_salary(teacher, month):
         first_group = False
         calculated_amount = base_amount + group_kpi
 
-        prev = TeacherSalary.objects.filter(
-            teacher=teacher,
-            company=teacher.company,
-            month=prev_month,
-            group=group,
-        ).first()
         carry_over = Decimal('0')
         if prev and prev.status in ('unpaid', 'partial'):
             carry_over = max(
