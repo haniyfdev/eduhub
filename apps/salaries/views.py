@@ -112,7 +112,10 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         total_units       = None
         unit_label        = None
 
-        if billing_type == 'per_day':
+        if billing_type == 'manual':
+            calculated_amount = salary.calculated_amount
+
+        elif billing_type == 'per_day':
             days_in_month = 30
             days_worked   = (archived_at - month_start).days + 1
             per_unit          = (full_monthly / days_in_month).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
