@@ -24,8 +24,12 @@ class TeacherSalary(BaseModel):
     is_paid           = models.BooleanField(default=False)
     paid_at           = models.DateTimeField(null=True, blank=True)
     archive_billing_type = models.CharField(max_length=20, null=True, blank=True)
-    manual_amount_set = models.BooleanField(default=False)
     note              = models.TextField(null=True, blank=True)
+
+    @property
+    def manual_amount_set(self) -> bool:
+        """True when the admin has manually changed the amount from the default total."""
+        return bool(self.calculated_amount != self.total_amount)
     created_at        = models.DateTimeField(auto_now_add=True)
 
     class Meta:
