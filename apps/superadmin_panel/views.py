@@ -16,7 +16,6 @@ from .serializers import (
     SuperadminLogSerializer,
     SuperadminLogCreateSerializer,
     CompanyCardSerializer,
-    CompanyWithSubscriptionSerializer,
     CompanySubscriptionDebtSerializer,
     CompanySubscriptionPaymentSerializer,
     SubscriptionPlanSerializer,
@@ -177,14 +176,13 @@ class SuperadminPlanView(APIView):
         if price <= 0:
             return Response({'error': "Narx musbat bo'lishi kerak."}, status=400)
 
-        plan, _ = SubscriptionPlan.objects.get_or_create(
-            id=1,
-            defaults={'price': price, 'updated_by': request.user},
-        )
-        if not _:
+        plan = SubscriptionPlan.objects.first()
+        if plan:
             plan.price = price
             plan.updated_by = request.user
-            plan.save()
+            plan.save(update_fields=['price', 'updated_by', 'updated_at'])
+        else:
+            plan = SubscriptionPlan.objects.create(price=price, updated_by=request.user)
 
         return Response(SubscriptionPlanSerializer(plan).data)
 
