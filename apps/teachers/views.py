@@ -53,6 +53,11 @@ class TeacherViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             return TeacherCreateSerializer
         return TeacherSerializer
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['company'] = self._get_active_company()
+        return ctx
+
     def perform_create(self, serializer):
         serializer.save(company=self._get_active_company(), hired_at=date.today())
 

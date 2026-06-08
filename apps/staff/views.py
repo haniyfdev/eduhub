@@ -59,7 +59,7 @@ class StaffViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         if not all([first_name, last_name, phone, role]):
             return Response({'error': 'Barcha maydonlar kerak'}, status=400)
 
-        if User.objects.filter(phone=phone).exists():
+        if User.objects.filter(phone=phone, company=company).exists():
             return Response({'error': 'Bu telefon raqam allaqachon ro\'yxatdan o\'tgan'}, status=400)
 
         with transaction.atomic():

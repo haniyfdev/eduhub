@@ -38,7 +38,8 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
 
     def validate_phone(self, value):
         from apps.users.models import User
-        if User.objects.filter(phone=value).exists():
+        company = self.context.get('company')
+        if User.objects.filter(phone=value, company=company).exists():
             raise serializers.ValidationError("Bu telefon raqam allaqachon ro'yxatdan o'tgan.")
         return value
 
