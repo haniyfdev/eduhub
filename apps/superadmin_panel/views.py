@@ -1,5 +1,6 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import date
+
 from django.db.models import Sum
 from rest_framework import mixins, viewsets, status
 from rest_framework.response import Response
@@ -9,26 +10,28 @@ from django.shortcuts import get_object_or_404
 from utils.permissions import IsSuperAdmin
 from apps.companies.models import Company
 from apps.payments.models import Payment
-from apps.subscriptions.models import Subscription
 from apps.users.models import User
-from .models import SuperadminLog
+from .models import SuperadminLog, SubscriptionPlan, CompanySubscriptionDebt, CompanySubscriptionPayment
 from .serializers import (
     SuperadminLogSerializer,
     SuperadminLogCreateSerializer,
+    CompanyCardSerializer,
     CompanyWithSubscriptionSerializer,
+    CompanySubscriptionDebtSerializer,
+    CompanySubscriptionPaymentSerializer,
+    SubscriptionPlanSerializer,
 )
 
 
-class SuperadminCompanyView(APIView):
-    """
-    GET  /api/superadmin/companies/
-    POST /api/superadmin/companies/
-    """
+class SuperadminCompanyListView(APIView):
+    """GET /api/superadmin/companies/"""
     permission_classes = [IsSuperAdmin]
 
     def get(self, request):
-        companies = Company.objects.prefetch_related('subscriptions', 'users').order_by('created_at')
-        return Response(CompanyWithSubscriptionSerializer(companies, many=True).data)
+        companies = Company.objects.prefetch_related(
+            'subscription_debts', 'branches'
+        ).order_by('created_at')
+        return Response(CompanyCardSerializer(companies, many=True).data)
 
     def post(self, request):
         from apps.companies.serializers import CompanyCreateSerializer
@@ -39,9 +42,21 @@ class SuperadminCompanyView(APIView):
         company = serializer.save()
         CompanySettings.objects.get_or_create(company=company)
         return Response(
-            CompanyWithSubscriptionSerializer(company).data,
+            CompanyCardSerializer(company).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class SuperadminCompanyDetailView(APIView):
+    """GET /api/superadmin/companies/{id}/"""
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request, pk):
+        company = get_object_or_404(
+            Company.objects.prefetch_related('subscription_debts', 'branches'),
+            pk=pk,
+        )
+        return Response(CompanyCardSerializer(company).data)
 
 
 class SuperadminCreateBossView(APIView):
@@ -56,10 +71,10 @@ class SuperadminCreateBossView(APIView):
         password = request.data.get('password', '').strip()
 
         if not all([first_name, last_name, phone, password]):
-            return Response({'detail': 'Barcha maydonlar to\'ldirilishi shart.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': "Barcha maydonlar to'ldirilishi shart."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if User.objects.filter(phone=phone).exists():
-            return Response({'detail': 'Bu telefon raqam allaqachon ro\'yxatdan o\'tgan.'}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(phone=phone, company=company).exists():
+            return Response({'detail': "Bu telefon raqam allaqachon ro'yxatdan o'tgan."}, status=status.HTTP_400_BAD_REQUEST)
 
         user = User.objects.create_user(
             phone=phone,
@@ -76,6 +91,102 @@ class SuperadminCreateBossView(APIView):
             'phone': user.phone,
             'role': user.role,
         }, status=status.HTTP_201_CREATED)
+
+
+class SuperadminDebtListView(APIView):
+    """GET /api/superadmin/debts/"""
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        qs = CompanySubscriptionDebt.objects.select_related('company').prefetch_related('payments')
+        status_filter = request.query_params.get('status')
+        company_filter = request.query_params.get('company')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if company_filter:
+            qs = qs.filter(company_id=company_filter)
+        return Response(CompanySubscriptionDebtSerializer(qs, many=True).data)
+
+
+class SuperadminDebtPayView(APIView):
+    """POST /api/superadmin/debts/{id}/pay/"""
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, pk):
+        debt = get_object_or_404(CompanySubscriptionDebt, pk=pk)
+
+        if debt.status == 'paid':
+            return Response({'error': "Bu qarz allaqachon to'langan."}, status=400)
+
+        try:
+            amount = Decimal(str(request.data.get('amount', 0)))
+        except (InvalidOperation, TypeError):
+            return Response({'error': "Noto'g'ri summa."}, status=400)
+
+        if amount <= 0:
+            return Response({'error': "Summa musbat bo'lishi kerak."}, status=400)
+
+        paid_so_far = debt.payments.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        remaining = debt.amount - paid_so_far
+
+        if amount > remaining:
+            return Response({'error': f"Summa qarzdan oshib ketdi. Qolgan qarz: {remaining}"}, status=400)
+
+        CompanySubscriptionPayment.objects.create(
+            company=debt.company,
+            debt=debt,
+            amount=amount,
+            recorded_by=request.user,
+        )
+
+        new_paid = paid_so_far + amount
+        if new_paid >= debt.amount:
+            debt.status = 'paid'
+        else:
+            debt.status = 'partial'
+        debt.save(update_fields=['status'])
+
+        return Response(CompanySubscriptionDebtSerializer(debt).data)
+
+
+class SuperadminPaymentListView(APIView):
+    """GET /api/superadmin/payments/"""
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        qs = CompanySubscriptionPayment.objects.select_related('company', 'recorded_by', 'debt')
+        return Response(CompanySubscriptionPaymentSerializer(qs, many=True).data)
+
+
+class SuperadminPlanView(APIView):
+    """GET /PUT /api/superadmin/plan/"""
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        plan = SubscriptionPlan.objects.first()
+        if not plan:
+            return Response({'price': None})
+        return Response(SubscriptionPlanSerializer(plan).data)
+
+    def put(self, request):
+        try:
+            price = Decimal(str(request.data.get('price', 0)))
+        except (InvalidOperation, TypeError):
+            return Response({'error': "Noto'g'ri narx."}, status=400)
+
+        if price <= 0:
+            return Response({'error': "Narx musbat bo'lishi kerak."}, status=400)
+
+        plan, _ = SubscriptionPlan.objects.get_or_create(
+            id=1,
+            defaults={'price': price, 'updated_by': request.user},
+        )
+        if not _:
+            plan.price = price
+            plan.updated_by = request.user
+            plan.save()
+
+        return Response(SubscriptionPlanSerializer(plan).data)
 
 
 class SuperadminRevenueView(APIView):
@@ -101,9 +212,13 @@ class SuperadminSubscriptionView(APIView):
     permission_classes = [IsSuperAdmin]
 
     def get(self, request):
-        from apps.subscriptions.serializers import SubscriptionSerializer
-        subs = Subscription.objects.select_related('company').order_by('-started_at')
-        return Response(SubscriptionSerializer(subs, many=True).data)
+        try:
+            from apps.subscriptions.models import Subscription
+            from apps.subscriptions.serializers import SubscriptionSerializer
+            subs = Subscription.objects.select_related('company').order_by('-started_at')
+            return Response(SubscriptionSerializer(subs, many=True).data)
+        except Exception:
+            return Response([])
 
 
 class SuperadminLogViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):

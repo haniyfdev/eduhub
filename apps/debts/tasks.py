@@ -3,6 +3,17 @@ from django.utils import timezone
 
 
 @shared_task
+def check_overdue_subscription_debts():
+    from apps.superadmin_panel.models import CompanySubscriptionDebt
+    today = timezone.now().date()
+    updated = CompanySubscriptionDebt.objects.filter(
+        period_end__lt=today,
+        status__in=['pending', 'partial'],
+    ).update(status='overdue')
+    return f"Marked {updated} subscription debts as overdue"
+
+
+@shared_task
 def check_overdue_debts():
     from .models import Debt
     today = timezone.now().date()
