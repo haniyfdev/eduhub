@@ -37,8 +37,11 @@ class SuperadminCompanyListView(APIView):
 
     def post(self, request):
         import os
+        import re
         import uuid as uuid_lib
         from apps.companies.models import CompanySettings
+
+        PHONE_RE = re.compile(r'^\+998\d{9}$')
 
         name = (request.data.get('name') or '').strip()
         phone = (request.data.get('phone') or '').strip()
@@ -52,13 +55,31 @@ class SuperadminCompanyListView(APIView):
         boss_password = (request.data.get('boss_password') or '').strip()
 
         errors = {}
-        if not name: errors['name'] = "Nom majburiy."
-        if not phone: errors['phone'] = "Telefon majburiy."
-        if not address: errors['address'] = "Manzil majburiy."
-        if not boss_first_name: errors['boss_first_name'] = "Ism majburiy."
-        if not boss_last_name: errors['boss_last_name'] = "Familiya majburiy."
-        if not boss_phone: errors['boss_phone'] = "Telefon majburiy."
-        if not boss_password: errors['boss_password'] = "Parol majburiy."
+        if not name:
+            errors['name'] = "Nom majburiy."
+        if not address:
+            errors['address'] = "Manzil majburiy."
+        if not boss_first_name:
+            errors['boss_first_name'] = "Ism majburiy."
+        if not boss_last_name:
+            errors['boss_last_name'] = "Familiya majburiy."
+        if not boss_password:
+            errors['boss_password'] = "Parol majburiy."
+
+        # Validate company phone
+        if not phone:
+            errors['phone'] = "Telefon majburiy."
+        elif not PHONE_RE.match(phone):
+            errors['phone'] = "Telefon raqami noto'g'ri (+998XXXXXXXXX)."
+        elif Company.objects.filter(phone=phone).exists():
+            errors['phone'] = "Bu telefon raqam allaqachon mavjud."
+
+        # Validate boss phone
+        if not boss_phone:
+            errors['boss_phone'] = "Telefon majburiy."
+        elif not PHONE_RE.match(boss_phone):
+            errors['boss_phone'] = "Telefon raqami noto'g'ri (+998XXXXXXXXX)."
+
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -108,7 +129,7 @@ class SuperadminCompanyListView(APIView):
         except Exception:
             company.delete()
             return Response(
-                {'boss_phone': "Bu telefon raqam allaqachon ishlatilmoqda."},
+                {'boss_phone': "Bu telefon raqam allaqachon mavjud."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
