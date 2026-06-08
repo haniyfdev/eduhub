@@ -30,10 +30,15 @@ class SuperadminCompanyListView(APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
-        companies = Company.objects.prefetch_related(
-            'subscription_debts', 'branches'
-        ).order_by('created_at')
-        return Response(CompanyCardSerializer(companies, many=True).data)
+        status_filter = request.query_params.get('status', 'active')
+        qs = Company.objects.prefetch_related('subscription_debts', 'branches').order_by('created_at')
+        if status_filter == 'archived':
+            qs = qs.filter(status='archived')
+        elif status_filter == 'all':
+            pass
+        else:
+            qs = qs.filter(status='active')
+        return Response(CompanyCardSerializer(qs, many=True).data)
 
     def post(self, request):
         import os
@@ -316,6 +321,75 @@ class SuperadminSubscriptionView(APIView):
             return Response(SubscriptionSerializer(subs, many=True).data)
         except Exception:
             return Response([])
+
+
+class SuperadminCompanyArchiveView(APIView):
+    """POST /api/superadmin/companies/{pk}/archive/"""
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, pk):
+        from django.utils import timezone
+        from apps.groups.models import GroupStudent
+
+        company = get_object_or_404(Company, pk=pk)
+        if company.status == 'archived':
+            return Response({'detail': "Kompaniya allaqachon arxivlangan."}, status=400)
+
+        # Soft-archive the company
+        company.status = 'archived'
+        company.archived_at = timezone.now()
+        company.save(update_fields=['status', 'archived_at'])
+
+        # Cascade 1: deactivate all company users
+        User.objects.filter(company=company).update(is_active=False)
+
+        # Cascade 2: mark active/trial/frozen group memberships as left
+        GroupStudent.objects.filter(
+            group__company=company,
+            status__in=('trial', 'active', 'frozen'),
+        ).update(status='left', left_at=timezone.now())
+
+        # Cascade 3: mark pending subscription debts as overdue
+        CompanySubscriptionDebt.objects.filter(
+            company=company, status='pending'
+        ).update(status='overdue')
+
+        # Audit log
+        SuperadminLog.objects.create(
+            user=request.user,
+            action='archive',
+            description=f"Company {company.name} archived by superadmin",
+        )
+
+        company.refresh_from_db()
+        return Response(CompanyCardSerializer(company).data)
+
+
+class SuperadminCompanyUnarchiveView(APIView):
+    """POST /api/superadmin/companies/{pk}/unarchive/"""
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, pk):
+        company = get_object_or_404(Company, pk=pk)
+        if company.status != 'archived':
+            return Response({'detail': "Kompaniya arxivlanmagan."}, status=400)
+
+        company.status = 'active'
+        company.archived_at = None
+        company.save(update_fields=['status', 'archived_at'])
+
+        # Re-activate all company users
+        User.objects.filter(company=company).update(is_active=True)
+
+        # Audit log
+        SuperadminLog.objects.create(
+            user=request.user,
+            action='unarchive',
+            description=f"Company {company.name} unarchived by superadmin",
+        )
+
+        company.refresh_from_db()
+        return Response(CompanyCardSerializer(company).data)
 
 
 class SuperadminLogViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
