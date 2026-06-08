@@ -21,7 +21,7 @@ class LessonViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
             return qs
         if user.role == 'teacher':
             try:
-                return qs.filter(teacher=user.teacher)
+                return qs.filter(group__teacher=user.teacher)
             except Exception:
                 return qs.none()
         return qs.filter(group__company_id=self._resolve_company_id())
