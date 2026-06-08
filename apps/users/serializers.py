@@ -1,31 +1,5 @@
-from django.contrib.auth import authenticate
 from rest_framework import serializers
 from .models import User
-
-
-class LoginSerializer(serializers.Serializer):
-    phone = serializers.CharField()
-    password = serializers.CharField(write_only=True)
-
-    def validate(self, data):
-        phone = data.get('phone')
-        password = data.get('password')
-
-        # Django's ModelBackend resolves kwargs.get(USERNAME_FIELD), so pass phone= directly.
-        user = authenticate(
-            request=self.context.get('request'),
-            phone=phone,
-            password=password,
-        )
-
-        if user is None:
-            raise serializers.ValidationError('Invalid phone number or password.')
-
-        if user.status == 'archived':
-            raise serializers.ValidationError('This account has been deactivated.')
-
-        data['user'] = user
-        return data
 
 
 class UserMeSerializer(serializers.ModelSerializer):
@@ -45,10 +19,21 @@ class UserCreateSerializer(serializers.ModelSerializer):
         fields = ('id', 'company', 'first_name', 'last_name', 'phone', 'role', 'password')
 
     def validate_phone(self, value):
-        normalized = value.strip().replace(' ', '').replace('-', '')
-        if User.objects.filter(phone=normalized).exists():
-            raise serializers.ValidationError("Bu telefon raqam allaqachon ro'yxatdan o'tgan.")
-        return normalized
+        return value.strip().replace(' ', '').replace('-', '')
+
+    def validate(self, data):
+        phone = data.get('phone')
+        # company may come from the request body or be injected by the view via context
+        company = data.get('company') or self.context.get('company')
+        if phone is not None:
+            qs = User.objects.filter(phone=phone, company=company)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {'phone': "Bu telefon raqam allaqachon ro'yxatdan o'tgan."}
+                )
+        return data
 
     def create(self, validated_data):
         password = validated_data.pop('password')
@@ -65,7 +50,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
     def validate_phone(self, value):
         normalized = value.strip().replace(' ', '').replace('-', '')
-        qs = User.objects.filter(phone=normalized)
+        company = self.instance.company if self.instance else None
+        qs = User.objects.filter(phone=normalized, company=company)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():

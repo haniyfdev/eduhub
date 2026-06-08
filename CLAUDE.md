@@ -55,9 +55,23 @@ docs/           — MODELS.md (all 23 models), RULES.md (12 hard rules), ARCHITE
 
 | Prefix | Purpose |
 |---|---|
-| `/api/auth/` | Login, refresh, logout |
+| `/api/auth/` | Login, select-company, refresh, logout |
 | `/api/v1/` | All business endpoints (see `config/api_router.py`) |
 | `/api/superadmin/` | Superadmin panel (no version, internal only) |
+
+### Auth Flow — Multi-Company Login
+
+`User.phone` is unique **per company** (`unique_together = [('phone', 'company')]`), not globally. One phone number can belong to different companies (e.g. a teacher at two centers).
+
+**Step 1 — POST `/api/auth/login/`** with `{phone, password}`:
+- 1 matching user → returns `{access, refresh, user}` immediately (unchanged behavior)
+- 2+ matching users → returns `{requires_company_selection: true, companies: [{id, name}], temp_token}`
+
+**Step 2 (only when multi-company)** — POST `/api/auth/select-company/` with `{company_id, temp_token}`:
+- `temp_token` is a signed server-side token (5-minute expiry, `django.core.signing`)
+- Returns `{access, refresh, user}` for the chosen company
+
+`LoginView` bypasses Django's `authenticate()` to support multiple users with the same phone.
 
 ### Multi-Tenancy (Rule 2)
 

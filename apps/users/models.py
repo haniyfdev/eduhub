@@ -43,7 +43,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
-    phone = models.CharField(max_length=20, unique=True)
+    phone = models.CharField(max_length=20)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     closed_at = models.DateTimeField(null=True, blank=True)
@@ -59,6 +59,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         db_table = 'users'
+        unique_together = [('phone', 'company')]
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.phone})"

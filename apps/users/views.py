@@ -1,3 +1,4 @@
+from django.core import signing
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -12,7 +13,6 @@ from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from utils.permissions import IsBossOrManager, IsSuperAdmin
 from .models import User
 from .serializers import (
-    LoginSerializer,
     UserCreateSerializer,
     UserListSerializer,
     UserMeSerializer,
@@ -20,44 +20,154 @@ from .serializers import (
 )
 
 
+_COMPANY_SELECT_SALT = 'company-select'
+_COMPANY_SELECT_MAX_AGE = 300  # 5 minutes
+
+
+def _build_user_payload(user):
+    """Build the user dict included in auth responses."""
+    accessible_companies = []
+    if user.company_id:
+        from apps.companies.models import Company
+        own = Company.objects.filter(id=user.company_id).first()
+        if own:
+            accessible_companies.append({'id': str(own.id), 'name': own.name})
+        if user.role in ['boss', 'manager']:
+            branches = Company.objects.filter(
+                branch_of_id=user.company_id, status='active'
+            ).values('id', 'name')
+            for b in branches:
+                accessible_companies.append({'id': str(b['id']), 'name': b['name']})
+    return {
+        'id': str(user.id),
+        'role': user.role,
+        'company_id': str(user.company_id) if user.company_id else None,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'phone': user.phone,
+        'accessible_companies': accessible_companies,
+    }
+
+
 class LoginView(APIView):
-    """POST /api/auth/login/ — returns access + refresh tokens with user payload."""
+    """POST /api/auth/login/
+
+    Single company  → returns access + refresh tokens immediately.
+    Multiple companies → returns requires_company_selection=true with company
+                         list and a short-lived signed temp_token; client must
+                         POST to /api/auth/select-company/ to get a real token.
+    """
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def post(self, request):
-        serializer = LoginSerializer(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=True)
+        phone = request.data.get('phone', '').strip()
+        password = request.data.get('password', '')
 
-        user = serializer.validated_data['user']
+        if not phone or not password:
+            return Response(
+                {'non_field_errors': ['Phone and password are required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Find all active users with this phone and verify password manually
+        # (can't use authenticate() when multiple users share a phone)
+        candidates = User.objects.filter(phone=phone, is_active=True).exclude(status='archived')
+        matching = [u for u in candidates if u.check_password(password)]
+
+        if not matching:
+            return Response(
+                {'non_field_errors': ['Invalid phone number or password.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(matching) == 1:
+            user = matching[0]
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': _build_user_payload(user),
+            }, status=status.HTTP_200_OK)
+
+        # Multiple companies — ask the client to choose
+        from apps.companies.models import Company
+        company_ids = [u.company_id for u in matching if u.company_id]
+        companies = Company.objects.filter(id__in=company_ids).values('id', 'name')
+        company_list = [{'id': str(c['id']), 'name': c['name']} for c in companies]
+
+        temp_token = signing.dumps(
+            {'phone': phone, 'user_ids': [str(u.id) for u in matching]},
+            salt=_COMPANY_SELECT_SALT,
+        )
+
+        return Response({
+            'requires_company_selection': True,
+            'companies': company_list,
+            'temp_token': temp_token,
+        }, status=status.HTTP_200_OK)
+
+
+class SelectCompanyView(APIView):
+    """POST /api/auth/select-company/
+
+    Accepts temp_token (from multi-company login) + company_id.
+    Returns real access + refresh tokens for the chosen company.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        temp_token = request.data.get('temp_token', '')
+        company_id = request.data.get('company_id', '')
+
+        if not temp_token or not company_id:
+            return Response(
+                {'error': 'temp_token and company_id are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            payload = signing.loads(
+                temp_token,
+                salt=_COMPANY_SELECT_SALT,
+                max_age=_COMPANY_SELECT_MAX_AGE,
+            )
+        except signing.SignatureExpired:
+            return Response(
+                {'error': 'Selection token has expired. Please log in again.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except signing.BadSignature:
+            return Response(
+                {'error': 'Invalid selection token.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user_ids = payload.get('user_ids', [])
+        try:
+            user = User.objects.get(
+                id__in=user_ids,
+                company_id=company_id,
+                is_active=True,
+            )
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'No account found for the selected company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if user.status == 'archived':
+            return Response(
+                {'error': 'This account has been deactivated.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         refresh = RefreshToken.for_user(user)
-
-        # Build list of companies this user can access (id + name for switcher UI)
-        accessible_companies = []
-        if user.company_id:
-            from apps.companies.models import Company
-            own = Company.objects.filter(id=user.company_id).first()
-            if own:
-                accessible_companies.append({'id': str(own.id), 'name': own.name})
-            if user.role in ['boss', 'manager']:
-                branches = Company.objects.filter(
-                    branch_of_id=user.company_id, status='active'
-                ).values('id', 'name')
-                for b in branches:
-                    accessible_companies.append({'id': str(b['id']), 'name': b['name']})
-
         return Response({
             'access': str(refresh.access_token),
             'refresh': str(refresh),
-            'user': {
-                'id': str(user.id),
-                'role': user.role,
-                'company_id': str(user.company_id) if user.company_id else None,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'phone': user.phone,
-                'accessible_companies': accessible_companies,
-            },
+            'user': _build_user_payload(user),
         }, status=status.HTTP_200_OK)
 
 
@@ -115,8 +225,14 @@ class UserViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             qs = qs.exclude(role='superadmin')
         return qs
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        user = self.request.user
+        if user.is_authenticated and user.role in ['boss', 'manager'] and user.company:
+            ctx['company'] = user.company
+        return ctx
+
     def perform_create(self, serializer):
-        # Boss/manager can only create users in their own company.
         user = self.request.user
         if user.role in ['boss', 'manager']:
             serializer.save(company=user.company)

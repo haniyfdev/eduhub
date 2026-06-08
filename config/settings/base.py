@@ -109,6 +109,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.User'
 
+# phone is intentionally non-unique globally; uniqueness is enforced per-company
+# via unique_together = [('phone', 'company')]. LoginView bypasses authenticate().
+SILENCED_SYSTEM_CHECKS = ['auth.E003']
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
