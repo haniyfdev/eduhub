@@ -30,11 +30,15 @@ class CompanySubscriptionDebtSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.name', read_only=True)
     company_id = serializers.UUIDField(source='company.id', read_only=True)
     paid_amount = serializers.SerializerMethodField()
+    remaining = serializers.SerializerMethodField()
 
     class Meta:
         model = CompanySubscriptionDebt
-        fields = ('id', 'company_id', 'company_name', 'amount', 'paid_amount',
-                  'period_start', 'period_end', 'status', 'created_at')
+        fields = (
+            'id', 'company_id', 'company_name', 'created_at',
+            'amount', 'paid_amount', 'remaining',
+            'period_start', 'period_end', 'status',
+        )
 
     def get_paid_amount(self, obj):
         from decimal import Decimal
@@ -42,17 +46,21 @@ class CompanySubscriptionDebtSerializer(serializers.ModelSerializer):
         total = obj.payments.aggregate(t=Sum('amount'))['t']
         return total or Decimal('0')
 
+    def get_remaining(self, obj):
+        from decimal import Decimal
+        from django.db.models import Sum
+        total = obj.payments.aggregate(t=Sum('amount'))['t']
+        paid = total or Decimal('0')
+        return obj.amount - paid
+
 
 class CompanySubscriptionPaymentSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.name', read_only=True)
-    recorded_by_name = serializers.CharField(source='recorded_by.get_full_name', read_only=True)
-    period_start = serializers.DateField(source='debt.period_start', read_only=True)
-    period_end = serializers.DateField(source='debt.period_end', read_only=True)
+    company_phone = serializers.CharField(source='company.phone', read_only=True)
 
     class Meta:
         model = CompanySubscriptionPayment
-        fields = ('id', 'company_name', 'amount', 'paid_at', 'recorded_by_name',
-                  'period_start', 'period_end')
+        fields = ('id', 'company_name', 'company_phone', 'amount', 'payment_method', 'paid_at')
 
 
 class CompanyCardSerializer(serializers.ModelSerializer):

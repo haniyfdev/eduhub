@@ -61,6 +61,12 @@ class CompanySubscriptionDebt(models.Model):
 
 
 class CompanySubscriptionPayment(models.Model):
+    PAYMENT_METHOD_CHOICES = [
+        ('cash', 'Cash'),
+        ('card', 'Card'),
+        ('transfer', 'Transfer'),
+    ]
+
     company = models.ForeignKey(
         'companies.Company',
         on_delete=models.CASCADE,
@@ -74,6 +80,9 @@ class CompanySubscriptionPayment(models.Model):
         related_name='payments',
     )
     amount = models.DecimalField(max_digits=15, decimal_places=2)
+    payment_method = models.CharField(
+        max_length=20, choices=PAYMENT_METHOD_CHOICES, default='cash'
+    )
     paid_at = models.DateTimeField(auto_now_add=True)
     recorded_by = models.ForeignKey(
         'users.User',

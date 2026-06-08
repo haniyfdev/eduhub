@@ -132,10 +132,15 @@ class SuperadminDebtPayView(APIView):
         if amount > remaining:
             return Response({'error': f"Summa qarzdan oshib ketdi. Qolgan qarz: {remaining}"}, status=400)
 
+        method = request.data.get('payment_method', 'cash')
+        if method not in ('cash', 'card', 'transfer'):
+            method = 'cash'
+
         CompanySubscriptionPayment.objects.create(
             company=debt.company,
             debt=debt,
             amount=amount,
+            payment_method=method,
             recorded_by=request.user,
         )
 
