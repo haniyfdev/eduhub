@@ -3,6 +3,7 @@ from datetime import date
 
 from django.db.models import Sum
 from rest_framework import mixins, viewsets, status
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -24,8 +25,9 @@ from .serializers import (
 
 
 class SuperadminCompanyListView(APIView):
-    """GET /api/superadmin/companies/"""
+    """GET/POST /api/superadmin/companies/"""
     permission_classes = [IsSuperAdmin]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
         companies = Company.objects.prefetch_related(
@@ -34,15 +36,85 @@ class SuperadminCompanyListView(APIView):
         return Response(CompanyCardSerializer(companies, many=True).data)
 
     def post(self, request):
-        from apps.companies.serializers import CompanyCreateSerializer
+        import os
+        import uuid as uuid_lib
         from apps.companies.models import CompanySettings
 
-        serializer = CompanyCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        company = serializer.save()
+        name = (request.data.get('name') or '').strip()
+        phone = (request.data.get('phone') or '').strip()
+        address = (request.data.get('address') or '').strip()
+        logo_file = request.FILES.get('logo')
+        parent_id = (request.data.get('parent') or '').strip() or None
+
+        boss_first_name = (request.data.get('boss_first_name') or '').strip()
+        boss_last_name = (request.data.get('boss_last_name') or '').strip()
+        boss_phone = (request.data.get('boss_phone') or '').strip()
+        boss_password = (request.data.get('boss_password') or '').strip()
+
+        errors = {}
+        if not name: errors['name'] = "Nom majburiy."
+        if not phone: errors['phone'] = "Telefon majburiy."
+        if not address: errors['address'] = "Manzil majburiy."
+        if not boss_first_name: errors['boss_first_name'] = "Ism majburiy."
+        if not boss_last_name: errors['boss_last_name'] = "Familiya majburiy."
+        if not boss_phone: errors['boss_phone'] = "Telefon majburiy."
+        if not boss_password: errors['boss_password'] = "Parol majburiy."
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        parent = None
+        if parent_id:
+            try:
+                parent = Company.objects.get(id=parent_id, branch_of__isnull=True)
+            except (Company.DoesNotExist, ValueError):
+                return Response(
+                    {'parent': "Asosiy markaz topilmadi yoki o'zi filialdir."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Handle logo file upload
+        logo_url = None
+        if logo_file:
+            from django.core.files.storage import default_storage
+            from django.core.files.base import ContentFile
+            ext = os.path.splitext(logo_file.name)[1].lower() or '.jpg'
+            file_path = f'company_logos/{uuid_lib.uuid4()}{ext}'
+            saved = default_storage.save(file_path, ContentFile(logo_file.read()))
+            logo_url = request.build_absolute_uri(default_storage.url(saved))
+
+        # Ensure a SubscriptionPlan exists so the post_save signal can create a debt
+        if not SubscriptionPlan.objects.exists():
+            SubscriptionPlan.objects.create(price=0)
+
+        # Create company — post_save signal auto-creates CompanySubscriptionDebt
+        company = Company.objects.create(
+            name=name,
+            phone=phone,
+            address=address,
+            branch_of=parent,
+            logo=logo_url,
+        )
         CompanySettings.objects.get_or_create(company=company)
+
+        try:
+            User.objects.create_user(
+                phone=boss_phone,
+                password=boss_password,
+                first_name=boss_first_name,
+                last_name=boss_last_name,
+                role='boss',
+                company=company,
+            )
+        except Exception:
+            company.delete()
+            return Response(
+                {'boss_phone': "Bu telefon raqam allaqachon ishlatilmoqda."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        company.refresh_from_db()
         return Response(
-            CompanyCardSerializer(company).data,
+            CompanyDetailSerializer(company).data,
             status=status.HTTP_201_CREATED,
         )
 
