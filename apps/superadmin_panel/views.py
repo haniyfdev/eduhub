@@ -16,6 +16,7 @@ from .serializers import (
     SuperadminLogSerializer,
     SuperadminLogCreateSerializer,
     CompanyCardSerializer,
+    CompanyDetailSerializer,
     CompanySubscriptionDebtSerializer,
     CompanySubscriptionPaymentSerializer,
     SubscriptionPlanSerializer,
@@ -55,7 +56,7 @@ class SuperadminCompanyDetailView(APIView):
             Company.objects.prefetch_related('subscription_debts', 'branches'),
             pk=pk,
         )
-        return Response(CompanyCardSerializer(company).data)
+        return Response(CompanyDetailSerializer(company).data)
 
 
 class SuperadminCreateBossView(APIView):

@@ -65,7 +65,7 @@ class CompanyCardSerializer(serializers.ModelSerializer):
     class Meta:
         model = Company
         fields = (
-            'id', 'name', 'phone', 'address', 'status',
+            'id', 'name', 'phone', 'address', 'status', 'logo',
             'branch_of', 'branch_of_name', 'is_branch',
             'active_student_count', 'subscription_status',
             'branches', 'created_at',
@@ -86,26 +86,46 @@ class CompanyCardSerializer(serializers.ModelSerializer):
         return [{'id': str(b.id), 'name': b.name} for b in obj.branches.filter(status='active')]
 
 
-# Keep backwards-compat alias used by existing views
-class CompanyWithSubscriptionSerializer(serializers.ModelSerializer):
-    active_subscription = serializers.SerializerMethodField()
-    user_count = serializers.SerializerMethodField()
-    branch_of_name = serializers.CharField(source='branch_of.name', read_only=True)
+class CompanyDetailSerializer(CompanyCardSerializer):
+    total_students = serializers.SerializerMethodField()
+    active_students = serializers.SerializerMethodField()
+    trial_students = serializers.SerializerMethodField()
+    frozen_students = serializers.SerializerMethodField()
+    pending_students = serializers.SerializerMethodField()
+    rejected_students = serializers.SerializerMethodField()
+    archived_students = serializers.SerializerMethodField()
 
-    class Meta:
-        model = Company
-        fields = ('id', 'name', 'phone', 'address', 'status', 'branch_of',
-                  'branch_of_name', 'created_at', 'active_subscription', 'user_count')
+    class Meta(CompanyCardSerializer.Meta):
+        fields = CompanyCardSerializer.Meta.fields + (
+            'total_students', 'active_students', 'trial_students',
+            'frozen_students', 'pending_students', 'rejected_students',
+            'archived_students',
+        )
 
-    def get_active_subscription(self, obj):
-        try:
-            from apps.subscriptions.models import Subscription
-            sub = obj.subscriptions.filter(status='active').first()
-            if not sub:
-                return None
-            return {'plan': sub.plan, 'expires_at': sub.expires_at, 'status': sub.status}
-        except Exception:
-            return None
+    def get_total_students(self, obj):
+        from apps.students.models import Student
+        return Student.objects.filter(company=obj).count()
 
-    def get_user_count(self, obj):
-        return obj.users.filter(status='active').count()
+    def get_active_students(self, obj):
+        from apps.students.models import Student
+        return Student.objects.filter(company=obj, status='active').count()
+
+    def get_trial_students(self, obj):
+        from apps.students.models import Student
+        return Student.objects.filter(company=obj, status='trial').count()
+
+    def get_frozen_students(self, obj):
+        from apps.students.models import Student
+        return Student.objects.filter(company=obj, status='frozen').count()
+
+    def get_pending_students(self, obj):
+        from apps.leads.models import Lead
+        return Lead.objects.filter(company=obj, status='pending').count()
+
+    def get_rejected_students(self, obj):
+        from apps.leads.models import Lead
+        return Lead.objects.filter(company=obj, status='ignored').count()
+
+    def get_archived_students(self, obj):
+        from apps.students.models import Student
+        return Student.objects.filter(company=obj, status='archived').count()

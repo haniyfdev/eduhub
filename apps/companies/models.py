@@ -62,6 +62,7 @@ class Company(BaseModel):
         choices=[('active', 'Active'), ('archived', 'Archived')],
         default='active',
     )
+    logo = models.URLField(max_length=500, null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
