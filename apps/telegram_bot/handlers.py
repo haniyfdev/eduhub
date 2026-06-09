@@ -18,10 +18,18 @@ async def start_handler(message: Message) -> None:
         one_time_keyboard=True,
     )
     await message.answer(
-        "Assalomu alaykum! 👋 EduHub botiga xush kelibsiz.\n\n"
+        "Assalomu alaykum! 👋\n\n"
+        "Sizni EduHub platformasining xabarchi botiga xush kelibsiz.\n\n"
         "Telefon raqamingizni ulash uchun quyidagi tugmani bosing 👇",
         reply_markup=kb,
     )
+
+
+def _normalize_phone(raw: str) -> str:
+    raw = raw.strip()
+    if not raw.startswith('+'):
+        raw = '+' + raw
+    return raw
 
 
 @router.message(F.contact)
@@ -29,23 +37,28 @@ async def contact_handler(message: Message) -> None:
     from asgiref.sync import sync_to_async
     from apps.users.models import User
 
-    phone_raw = (message.contact.phone_number or '').strip()
-    phone = phone_raw if phone_raw.startswith('+') else '+' + phone_raw
+    phone = _normalize_phone(message.contact.phone_number or '')
     chat_id = message.chat.id
 
-    def _link() -> int:
-        return User.objects.filter(phone=phone, is_active=True).update(telegram_chat_id=chat_id)
+    def _link():
+        user = User.objects.filter(phone=phone, is_active=True).first()
+        if user:
+            user.telegram_chat_id = chat_id
+            user.save(update_fields=['telegram_chat_id'])
+        return user
 
-    updated = await sync_to_async(_link)()
+    user = await sync_to_async(_link)()
 
-    if updated:
+    if user:
         await message.answer(
-            "✅ Telefon raqamingiz tasdiqlandi! "
+            f"✅ Assalomu alaykum, {user.first_name}! "
+            "Telefon raqamingiz muvaffaqiyatli ulandi.\n\n"
             "Endi parolni tiklash uchun saytdan foydalanishingiz mumkin.",
             reply_markup=ReplyKeyboardRemove(),
         )
     else:
         await message.answer(
-            "❌ Bu raqam tizimda topilmadi.",
+            f"❌ Bu raqam ({phone}) tizimda topilmadi. "
+            "Boshqa raqam bilan urinib ko'ring.",
             reply_markup=ReplyKeyboardRemove(),
         )
