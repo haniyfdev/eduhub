@@ -50,10 +50,11 @@ async def contact_handler(message: Message) -> None:
     user = await sync_to_async(_link)()
 
     if user:
+        first_name = (message.from_user.first_name or '').strip() if message.from_user else ''
         await message.answer(
-            f"✅ Assalomu alaykum, {user.first_name}! "
-            "Telefon raqamingiz muvaffaqiyatli ulandi.\n\n"
-            "Endi parolni tiklash uchun saytdan foydalanishingiz mumkin.",
+            f"👋 Assalomu alaykum, {first_name}!\n\n"
+            "✅ Telefon raqamingiz Eduhub platformasiga muvaffaqiyatli ulandi.\n"
+            "🤖 Endi platforma bilan bo'lgan muomalalarda botdan foydalanishingiz mumkin.",
             reply_markup=ReplyKeyboardRemove(),
         )
     else:
