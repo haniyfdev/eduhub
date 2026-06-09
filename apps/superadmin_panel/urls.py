@@ -12,6 +12,7 @@ from .views import (
     SuperadminPlanView,
     SuperadminRevenueView,
     SuperadminSubscriptionView,
+    SuperadminDashboardView,
     SuperadminLogViewSet,
 )
 
@@ -19,6 +20,7 @@ router = DefaultRouter()
 router.register('logs', SuperadminLogViewSet, basename='superadmin-logs')
 
 urlpatterns = [
+    path('dashboard/', SuperadminDashboardView.as_view(), name='superadmin-dashboard'),
     path('companies/', SuperadminCompanyListView.as_view(), name='superadmin-companies'),
     path('companies/<uuid:pk>/', SuperadminCompanyDetailView.as_view(), name='superadmin-company-detail'),
     path('companies/<uuid:pk>/create-boss/', SuperadminCreateBossView.as_view(), name='superadmin-create-boss'),

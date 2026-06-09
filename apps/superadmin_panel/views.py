@@ -1,7 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from datetime import date
 
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, Exists, OuterRef
 from rest_framework import mixins, viewsets, status
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
@@ -448,6 +448,99 @@ class SuperadminCompanyUnarchiveView(APIView):
 
         company.refresh_from_db()
         return Response(CompanyCardSerializer(company).data)
+
+
+class SuperadminDashboardView(APIView):
+    """GET /api/superadmin/dashboard/"""
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from decimal import Decimal
+        from apps.students.models import Student
+
+        today = date.today()
+        month_start = today.replace(day=1)
+
+        active_qs = Company.objects.filter(Q(status='active') | Q(status__isnull=True))
+
+        total_companies = active_qs.count()
+
+        debt_company_count = (
+            CompanySubscriptionDebt.objects
+            .filter(company__in=active_qs, status__in=('pending', 'overdue'))
+            .values('company_id').distinct().count()
+        )
+
+        total_active_students = Student.objects.filter(
+            company__in=active_qs, status='active'
+        ).count()
+
+        total_revenue = (
+            CompanySubscriptionPayment.objects.aggregate(t=Sum('amount'))['t']
+            or Decimal('0')
+        )
+
+        current_month_revenue = (
+            CompanySubscriptionPayment.objects.filter(paid_at__date__gte=month_start)
+            .aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        )
+
+        overdue_debt_total = (
+            CompanySubscriptionDebt.objects.filter(status='overdue')
+            .aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        )
+
+        # Revenue trend: 1 DB query — aggregate by date, fill gaps in Python
+        start_date = today - timedelta(days=29)
+        payments_by_date: dict = {
+            str(row['paid_at__date']): row['total']
+            for row in CompanySubscriptionPayment.objects.filter(
+                paid_at__date__gte=start_date
+            ).values('paid_at__date').annotate(total=Sum('amount'))
+        }
+        revenue_trend = [
+            {
+                'date': str(today - timedelta(days=i)),
+                'revenue': payments_by_date.get(str(today - timedelta(days=i)), Decimal('0')),
+            }
+            for i in range(29, -1, -1)
+        ]
+
+        # Companies table
+        companies_table = []
+        for company in active_qs.prefetch_related('subscription_debts__payments').order_by('created_at'):
+            active_students = Student.objects.filter(company=company, status='active').count()
+            latest_debt = company.subscription_debts.order_by('-created_at').first()
+            if latest_debt:
+                paid_total = (
+                    latest_debt.payments.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+                )
+                debt_remaining = latest_debt.amount - paid_total
+                sub_status = latest_debt.status
+            else:
+                debt_remaining = Decimal('0')
+                sub_status = None
+            companies_table.append({
+                'id': str(company.id),
+                'name': company.name,
+                'active_students': active_students,
+                'subscription_status': sub_status,
+                'debt_amount': debt_remaining,
+            })
+
+        return Response({
+            'stats': {
+                'total_companies': total_companies,
+                'debt_companies': debt_company_count,
+                'total_active_students': total_active_students,
+                'total_revenue': total_revenue,
+                'current_month_revenue': current_month_revenue,
+                'overdue_debt_total': overdue_debt_total,
+            },
+            'revenue_trend': revenue_trend,
+            'companies_table': companies_table,
+        })
 
 
 class SuperadminLogViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
