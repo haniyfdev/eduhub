@@ -4,9 +4,11 @@ from django.apps import AppConfig
 
 logger = logging.getLogger(__name__)
 
+# Commands where webhook setup makes no sense (build steps, introspection, etc.)
 _SKIP = frozenset({
     'migrate', 'makemigrations', 'shell', 'test',
     'collectstatic', 'dbshell', 'showmigrations', 'check',
+    'create_superadmin',
 })
 
 
@@ -15,17 +17,7 @@ class TelegramBotConfig(AppConfig):
     verbose_name = 'Telegram Bot'
 
     def ready(self) -> None:
-        # Skip during management commands that don't need the bot
         if len(sys.argv) > 1 and sys.argv[1] in _SKIP:
-            return
-
-        # Wrap imports so a missing/broken aiogram installation never crashes Django
-        try:
-            from .bot import dp
-            from .handlers import router
-            dp.include_router(router)
-        except Exception as exc:
-            logger.error(f'Failed to setup Telegram bot handlers: {exc}')
             return
 
         from decouple import config as dconf

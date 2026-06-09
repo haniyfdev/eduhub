@@ -35,11 +35,18 @@ class TelegramWebhookView(View):
 
         token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
         if not token:
+            logger.error("TELEGRAM_BOT_TOKEN not set — cannot process Telegram update")
+            return
+
+        if not dp.sub_routers:
+            logger.error("Dispatcher has no routers — handlers not registered (check bot.py import)")
             return
 
         bot = Bot(token=token)
         try:
             update = Update.model_validate(data)
             await dp.feed_update(bot, update)
+        except Exception as e:
+            logger.error(f"Update processing error: {e}")
         finally:
             await bot.session.close()

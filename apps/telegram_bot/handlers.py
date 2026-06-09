@@ -18,8 +18,8 @@ async def start_handler(message: Message) -> None:
         one_time_keyboard=True,
     )
     await message.answer(
-        "👋 EduHub botiga xush kelibsiz!\n\n"
-        "Parolni tiklash uchun telefon raqamingizni ulang:",
+        "Assalomu alaykum! 👋 EduHub botiga xush kelibsiz.\n\n"
+        "Telefon raqamingizni ulash uchun quyidagi tugmani bosing 👇",
         reply_markup=kb,
     )
 
