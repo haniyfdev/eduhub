@@ -28,6 +28,8 @@ services:
         sync: false
       - key: BACKEND_URL
         sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
 
   - type: worker
     name: eduhub-worker

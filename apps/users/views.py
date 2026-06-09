@@ -208,7 +208,9 @@ class ForgotPasswordView(APIView):
     authentication_classes = []
 
     def post(self, request):
+        import logging as _log
         import traceback
+        _log.getLogger(__name__).error("=== FORGOT PASSWORD VIEW CALLED ===")
         try:
             from utils.otp import check_rate_limit, generate_otp, increment_attempts
             from utils.telegram import send_otp_to_telegram
@@ -263,8 +265,7 @@ class ForgotPasswordView(APIView):
             return Response({'success': True, 'expires_in': 100})
 
         except Exception as e:
-            print(f"FORGOT PASSWORD ERROR: {e}")
-            print(traceback.format_exc())
+            _log.getLogger(__name__).error(f"FORGOT PASSWORD ERROR: {e}\n{traceback.format_exc()}")
             return Response({'error': 'server_error', 'detail': str(e)}, status=500)
 
 
