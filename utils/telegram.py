@@ -22,9 +22,9 @@ def send_otp_to_telegram(phone: str, code: str) -> bool:
         return False
 
     text = (
-        "🔐 EduHub tasdiqlash kodi:\n"
-        f"`{code}`\n"
-        "⏱ Amal qilish vaqti: 100 soniya"
+        "🔐 EduHub tasdiqlash kodi:\n\n"
+        f"`{code}`\n\n"
+        "📋 Nusxalash uchun raqam ustiga bosing"
     )
     try:
         resp = requests.post(
