@@ -1,7 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from datetime import date
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from rest_framework import mixins, viewsets, status
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
@@ -37,7 +37,8 @@ class SuperadminCompanyListView(APIView):
         elif status_filter == 'all':
             pass
         else:
-            qs = qs.filter(status='active')
+            # treat NULL status as active (covers rows created before backfill)
+            qs = qs.filter(Q(status='active') | Q(status__isnull=True))
         return Response(CompanyCardSerializer(qs, many=True).data)
 
     def post(self, request):
