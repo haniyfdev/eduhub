@@ -226,12 +226,21 @@ class ForgotPasswordView(APIView):
         if not User.objects.filter(phone=phone, is_active=True).exists():
             return Response({'success': True, 'expires_in': 100})
 
-        has_telegram = (
-            User.objects
-            .filter(phone=phone, is_active=True)
-            .exclude(telegram_chat_id=None)
-            .exists()
-        )
+        try:
+            has_telegram = (
+                User.objects
+                .filter(phone=phone, is_active=True)
+                .exclude(telegram_chat_id=None)
+                .exists()
+            )
+        except Exception as db_err:
+            # telegram_chat_id column missing — migration 0003 not yet applied
+            import logging
+            logging.getLogger(__name__).error(
+                f"telegram_chat_id query failed (run: python manage.py migrate): {db_err}"
+            )
+            has_telegram = False
+
         if not has_telegram:
             return Response(
                 {
