@@ -296,6 +296,8 @@ class VerifyOtpView(APIView):
         if result == 'invalid':
             return Response({'error': 'invalid_otp'}, status=status.HTTP_400_BAD_REQUEST)
 
+        from utils.otp import get_redis, get_rate_limit_key
+        get_redis().delete(get_rate_limit_key(phone))
         reset_token = signing.dumps({'phone': phone}, salt=_RESET_SALT)
         return Response({'reset_token': reset_token})
 
@@ -341,6 +343,8 @@ class ResetPasswordView(APIView):
             user.set_password(new_password)
             user.save(update_fields=['password'])
 
+        from utils.otp import get_redis, get_rate_limit_key
+        get_redis().delete(get_rate_limit_key(phone))
         return Response({'success': True})
 
 
