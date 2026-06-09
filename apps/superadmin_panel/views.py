@@ -30,16 +30,60 @@ class SuperadminCompanyListView(APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
+        import re
         status_filter = request.query_params.get('status', 'active')
+        search = request.query_params.get('search', '').strip()
         qs = Company.objects.prefetch_related('subscription_debts', 'branches').order_by('created_at')
         if status_filter == 'archived':
             qs = qs.filter(status='archived')
         elif status_filter == 'all':
             pass
         else:
-            # treat NULL status as active (covers rows created before backfill)
             qs = qs.filter(Q(status='active') | Q(status__isnull=True))
-        return Response(CompanyCardSerializer(qs, many=True).data)
+
+        if not search:
+            return Response(CompanyCardSerializer(qs, many=True).data)
+
+        # Evaluate to list so we can build the hierarchical index in Python
+        all_companies = list(qs)
+        parents = sorted(
+            [c for c in all_companies if c.branch_of_id is None],
+            key=lambda c: c.created_at,
+        )
+        index_map = {}  # company.id -> badge string e.g. "3" or "3.1"
+        for p_idx, parent in enumerate(parents, 1):
+            index_map[parent.id] = str(p_idx)
+            branches = sorted(
+                [c for c in all_companies if c.branch_of_id == parent.id],
+                key=lambda c: c.created_at,
+            )
+            for b_idx, branch in enumerate(branches, 1):
+                index_map[branch.id] = f'{p_idx}.{b_idx}'
+
+        parent_name_by_id = {p.id: p.name for p in parents}
+        search_lower = search.lower()
+        # matches "4" or "4.1" exactly
+        is_hier = bool(re.match(r'^\d+(\.\d+)?$', search))
+
+        matched_ids = set()
+        for company in all_companies:
+            badge = index_map.get(company.id, '')
+            # Name match: company's own name OR its parent's name
+            name_hit = (
+                search_lower in company.name.lower()
+                or (company.branch_of_id
+                    and search_lower in parent_name_by_id.get(company.branch_of_id, '').lower())
+            )
+            # Hierarchical number match
+            hier_hit = is_hier and (
+                badge == search
+                or ('.' not in search and badge.startswith(search + '.'))
+            )
+            if name_hit or hier_hit:
+                matched_ids.add(company.id)
+
+        filtered = [c for c in all_companies if c.id in matched_ids]
+        return Response(CompanyCardSerializer(filtered, many=True).data)
 
     def post(self, request):
         import os
