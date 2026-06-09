@@ -2,6 +2,11 @@ import random
 from django.core.cache import cache
 
 
+def get_redis():
+    from django_redis import get_redis_connection
+    return get_redis_connection("default")
+
+
 def generate_otp(phone: str) -> str:
     code = str(random.randint(100000, 999999))
     cache.set(f"otp:{phone}", code, timeout=100)
@@ -25,7 +30,7 @@ def get_rate_limit_key(phone: str) -> str:
 
 def check_rate_limit(phone: str) -> dict:
     key = get_rate_limit_key(phone)
-    attempts = cache.get(key)
+    attempts = get_redis().get(key)
     attempts = int(attempts) if attempts else 0
 
     if attempts >= 7:
@@ -35,12 +40,13 @@ def check_rate_limit(phone: str) -> dict:
     elif attempts >= 5:
         return {"allowed": False, "wait_seconds": 18000}
     elif attempts >= 3:
-        return {"allowed": False, "wait_seconds": 3600}
+        return {"allowed": False, "wait_seconds": 1800}
     else:
         return {"allowed": True, "wait_seconds": 0}
 
 
 def increment_attempts(phone: str) -> None:
     key = get_rate_limit_key(phone)
-    current = cache.get(key, 0)
-    cache.set(key, current + 1, timeout=24 * 3600)
+    r = get_redis()
+    r.incr(key)
+    r.expire(key, 24 * 3600)
