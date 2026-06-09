@@ -460,11 +460,21 @@ class SuperadminDashboardView(APIView):
         from apps.students.models import Student
 
         today = date.today()
-        month_start = today.replace(day=1)
+
+        # Date range for filtered stats — defaults to current calendar month
+        date_from_str = request.query_params.get('date_from', '')
+        date_to_str = request.query_params.get('date_to', '')
+        try:
+            date_from = date.fromisoformat(date_from_str) if date_from_str else today.replace(day=1)
+            date_to = date.fromisoformat(date_to_str) if date_to_str else today
+        except ValueError:
+            date_from = today.replace(day=1)
+            date_to = today
 
         active_qs = Company.objects.filter(Q(status='active') | Q(status__isnull=True))
 
-        total_companies = active_qs.count()
+        active_companies = active_qs.count()
+        archived_companies = Company.objects.filter(status='archived').count()
 
         debt_company_count = (
             CompanySubscriptionDebt.objects
@@ -481,14 +491,19 @@ class SuperadminDashboardView(APIView):
             or Decimal('0')
         )
 
-        current_month_revenue = (
-            CompanySubscriptionPayment.objects.filter(paid_at__date__gte=month_start)
-            .aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        period_revenue = (
+            CompanySubscriptionPayment.objects.filter(
+                paid_at__date__gte=date_from,
+                paid_at__date__lte=date_to,
+            ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
         )
 
-        overdue_debt_total = (
-            CompanySubscriptionDebt.objects.filter(status='overdue')
-            .aggregate(t=Sum('amount'))['t'] or Decimal('0')
+        period_overdue_total = (
+            CompanySubscriptionDebt.objects.filter(
+                status='overdue',
+                period_end__gte=date_from,
+                period_end__lte=date_to,
+            ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
         )
 
         # Revenue trend: 1 DB query — aggregate by date, fill gaps in Python
@@ -531,12 +546,13 @@ class SuperadminDashboardView(APIView):
 
         return Response({
             'stats': {
-                'total_companies': total_companies,
+                'active_companies': active_companies,
+                'archived_companies': archived_companies,
                 'debt_companies': debt_company_count,
                 'total_active_students': total_active_students,
                 'total_revenue': total_revenue,
-                'current_month_revenue': current_month_revenue,
-                'overdue_debt_total': overdue_debt_total,
+                'period_revenue': period_revenue,
+                'period_overdue_total': period_overdue_total,
             },
             'revenue_trend': revenue_trend,
             'companies_table': companies_table,
