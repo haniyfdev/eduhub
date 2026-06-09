@@ -52,6 +52,7 @@ LOCAL_APPS = [
     'apps.staff',
     'apps.rooms',
     'apps.sms',
+    'apps.telegram_bot',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -165,3 +166,6 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 ESKIZ_EMAIL = config('ESKIZ_EMAIL', default='')
 ESKIZ_PASSWORD = config('ESKIZ_PASSWORD', default='')
+
+TELEGRAM_BOT_TOKEN = config('TELEGRAM_BOT_TOKEN', default='')
+BACKEND_URL = config('BACKEND_URL', default='')

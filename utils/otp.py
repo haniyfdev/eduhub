@@ -1,0 +1,41 @@
+import random
+from django.core.cache import cache
+
+
+def generate_otp(phone: str) -> str:
+    code = str(random.randint(100000, 999999))
+    cache.set(f"otp:{phone}", code, timeout=100)
+    return code
+
+
+def verify_otp(phone: str, code: str) -> str:
+    """Returns 'valid', 'invalid', or 'expired'."""
+    stored = cache.get(f"otp:{phone}")
+    if stored is None:
+        return 'expired'
+    if str(stored) == str(code):
+        cache.delete(f"otp:{phone}")
+        return 'valid'
+    return 'invalid'
+
+
+def get_rate_limit_key(phone: str) -> str:
+    return f"otp_attempts:{phone}"
+
+
+def check_rate_limit(phone: str) -> dict:
+    key = get_rate_limit_key(phone)
+    attempts = cache.get(key, 0)
+    if attempts >= 6:
+        return {"allowed": False, "wait_seconds": 24 * 3600}
+    if attempts >= 5:
+        return {"allowed": False, "wait_seconds": 5 * 3600}
+    if attempts >= 3:
+        return {"allowed": False, "wait_seconds": 3600}
+    return {"allowed": True, "wait_seconds": 0}
+
+
+def increment_attempts(phone: str) -> None:
+    key = get_rate_limit_key(phone)
+    current = cache.get(key, 0)
+    cache.set(key, current + 1, timeout=24 * 3600)

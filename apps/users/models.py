@@ -49,6 +49,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     closed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    telegram_chat_id = models.BigIntegerField(null=True, blank=True)
+
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 

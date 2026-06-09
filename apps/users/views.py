@@ -194,6 +194,140 @@ class LogoutView(APIView):
 RefreshTokenView = TokenRefreshView
 
 
+_RESET_SALT = 'password-reset'
+_RESET_MAX_AGE = 300  # 5 minutes
+
+
+class ForgotPasswordView(APIView):
+    """POST /api/auth/forgot-password/
+
+    Body: { "phone": "+998XXXXXXXXX" }
+    Sends a 6-digit OTP to the user's linked Telegram account.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        from utils.otp import check_rate_limit, generate_otp, increment_attempts
+        from utils.telegram import send_otp_to_telegram
+
+        phone = request.data.get('phone', '').strip()
+        if not phone:
+            return Response({'error': 'phone is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        rate = check_rate_limit(phone)
+        if not rate['allowed']:
+            return Response(
+                {'error': 'rate_limited', 'wait_seconds': rate['wait_seconds']},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        # If no user exists, return success silently (prevent phone enumeration)
+        if not User.objects.filter(phone=phone, is_active=True).exists():
+            return Response({'success': True, 'expires_in': 100})
+
+        has_telegram = (
+            User.objects
+            .filter(phone=phone, is_active=True)
+            .exclude(telegram_chat_id=None)
+            .exists()
+        )
+        if not has_telegram:
+            return Response(
+                {
+                    'error': 'telegram_not_linked',
+                    'message': 'Avval Telegram botimizga /start yuboring va telefon raqamingizni ulang',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        code = generate_otp(phone)
+        sent = send_otp_to_telegram(phone, code)
+        if not sent:
+            return Response(
+                {'error': 'telegram_send_failed', 'message': "Telegram xabar yuborishda xatolik yuz berdi"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        increment_attempts(phone)
+        return Response({'success': True, 'expires_in': 100})
+
+
+class VerifyOtpView(APIView):
+    """POST /api/auth/verify-otp/
+
+    Body: { "phone": "+998XXXXXXXXX", "code": "123456" }
+    Returns a short-lived reset_token on success.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        from utils.otp import verify_otp
+
+        phone = request.data.get('phone', '').strip()
+        code = request.data.get('code', '').strip()
+
+        if not phone or not code:
+            return Response(
+                {'error': 'phone and code are required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = verify_otp(phone, code)
+        if result == 'expired':
+            return Response({'error': 'otp_expired'}, status=status.HTTP_400_BAD_REQUEST)
+        if result == 'invalid':
+            return Response({'error': 'invalid_otp'}, status=status.HTTP_400_BAD_REQUEST)
+
+        reset_token = signing.dumps({'phone': phone}, salt=_RESET_SALT)
+        return Response({'reset_token': reset_token})
+
+
+class ResetPasswordView(APIView):
+    """POST /api/auth/reset-password/
+
+    Body: { "reset_token": "...", "new_password": "..." }
+    Updates password for ALL accounts sharing the phone number.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        reset_token = request.data.get('reset_token', '')
+        new_password = request.data.get('new_password', '')
+
+        if not reset_token or not new_password:
+            return Response(
+                {'error': 'reset_token and new_password are required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(new_password) < 8:
+            return Response(
+                {'error': 'password_too_short', 'message': "Parol kamida 8 ta belgidan iborat bo'lishi kerak"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            payload = signing.loads(reset_token, salt=_RESET_SALT, max_age=_RESET_MAX_AGE)
+        except signing.SignatureExpired:
+            return Response({'error': 'token_expired'}, status=status.HTTP_400_BAD_REQUEST)
+        except signing.BadSignature:
+            return Response({'error': 'invalid_token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        phone = payload.get('phone', '')
+        users = User.objects.filter(phone=phone, is_active=True)
+        if not users.exists():
+            return Response({'error': 'user_not_found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        for user in users:
+            user.set_password(new_password)
+            user.save(update_fields=['password'])
+
+        return Response({'success': True})
+
+
 class UserViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
     """
     GET    /api/v1/users/         List staff in company
