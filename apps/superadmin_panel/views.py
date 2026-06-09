@@ -60,17 +60,22 @@ class SuperadminCompanyListView(APIView):
         boss_phone = (request.data.get('boss_phone') or '').strip()
         boss_password = (request.data.get('boss_password') or '').strip()
 
+        is_branch = bool(parent_id)
+
         errors = {}
         if not name:
             errors['name'] = "Nom majburiy."
         if not address:
             errors['address'] = "Manzil majburiy."
-        if not boss_first_name:
-            errors['boss_first_name'] = "Ism majburiy."
-        if not boss_last_name:
-            errors['boss_last_name'] = "Familiya majburiy."
-        if not boss_password:
-            errors['boss_password'] = "Parol majburiy."
+
+        # Boss fields only required for independent companies
+        if not is_branch:
+            if not boss_first_name:
+                errors['boss_first_name'] = "Ism majburiy."
+            if not boss_last_name:
+                errors['boss_last_name'] = "Familiya majburiy."
+            if not boss_password:
+                errors['boss_password'] = "Parol majburiy."
 
         # Validate company phone
         if not phone:
@@ -80,11 +85,12 @@ class SuperadminCompanyListView(APIView):
         elif Company.objects.filter(phone=phone).exists():
             errors['phone'] = "Bu telefon raqam allaqachon mavjud."
 
-        # Validate boss phone
-        if not boss_phone:
-            errors['boss_phone'] = "Telefon majburiy."
-        elif not PHONE_RE.match(boss_phone):
-            errors['boss_phone'] = "Telefon raqami noto'g'ri (+998XXXXXXXXX)."
+        # Validate boss phone only for independent companies
+        if not is_branch:
+            if not boss_phone:
+                errors['boss_phone'] = "Telefon majburiy."
+            elif not PHONE_RE.match(boss_phone):
+                errors['boss_phone'] = "Telefon raqami noto'g'ri (+998XXXXXXXXX)."
 
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
@@ -123,21 +129,22 @@ class SuperadminCompanyListView(APIView):
         )
         CompanySettings.objects.get_or_create(company=company)
 
-        try:
-            User.objects.create_user(
-                phone=boss_phone,
-                password=boss_password,
-                first_name=boss_first_name,
-                last_name=boss_last_name,
-                role='boss',
-                company=company,
-            )
-        except Exception:
-            company.delete()
-            return Response(
-                {'boss_phone': "Bu telefon raqam allaqachon mavjud."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        if not is_branch:
+            try:
+                User.objects.create_user(
+                    phone=boss_phone,
+                    password=boss_password,
+                    first_name=boss_first_name,
+                    last_name=boss_last_name,
+                    role='boss',
+                    company=company,
+                )
+            except Exception:
+                company.delete()
+                return Response(
+                    {'boss_phone': "Bu telefon raqam allaqachon mavjud."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         company.refresh_from_db()
         return Response(
