@@ -22,13 +22,18 @@ def send_otp_to_telegram(phone: str, code: str) -> bool:
         return False
 
     text = (
-        f"🔐 EduHub tasdiqlash kodi: {code}\n"
-        f"⏱ Amal qilish vaqti: 100 soniya"
+        "🔐 EduHub tasdiqlash kodi:\n"
+        f"`{code}`\n"
+        "⏱ Amal qilish vaqti: 100 soniya"
     )
     try:
         resp = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": user.telegram_chat_id, "text": text},
+            json={
+                "chat_id": user.telegram_chat_id,
+                "text": text,
+                "parse_mode": "MarkdownV2",
+            },
             timeout=10,
         )
         return resp.ok

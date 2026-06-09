@@ -19,22 +19,27 @@ class TelegramBotConfig(AppConfig):
         if len(sys.argv) > 1 and sys.argv[1] in _SKIP:
             return
 
-        from .bot import dp
-        from .handlers import router
-        dp.include_router(router)
+        # Wrap imports so a missing/broken aiogram installation never crashes Django
+        try:
+            from .bot import dp
+            from .handlers import router
+            dp.include_router(router)
+        except Exception as exc:
+            logger.error(f'Failed to setup Telegram bot handlers: {exc}')
+            return
 
         from decouple import config as dconf
         token = dconf('TELEGRAM_BOT_TOKEN', default='')
         backend_url = dconf('BACKEND_URL', default='')
         if not token or not backend_url:
-            logger.warning('TELEGRAM_BOT_TOKEN or BACKEND_URL not set — webhook not configured')
+            logger.warning('TELEGRAM_BOT_TOKEN or BACKEND_URL not configured — webhook skipped')
             return
 
         import asyncio
         try:
             asyncio.run(self._set_webhook(token, backend_url))
-        except Exception as e:
-            logger.warning(f'Telegram webhook setup failed: {e}')
+        except Exception as exc:
+            logger.warning(f'Telegram webhook setup failed (server still starts normally): {exc}')
 
     @staticmethod
     async def _set_webhook(token: str, backend_url: str) -> None:
