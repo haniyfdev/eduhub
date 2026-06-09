@@ -208,58 +208,64 @@ class ForgotPasswordView(APIView):
     authentication_classes = []
 
     def post(self, request):
-        from utils.otp import check_rate_limit, generate_otp, increment_attempts
-        from utils.telegram import send_otp_to_telegram
+        import traceback
+        try:
+            from utils.otp import check_rate_limit, generate_otp, increment_attempts
+            from utils.telegram import send_otp_to_telegram
 
-        phone = request.data.get('phone', '').strip()
-        if not phone:
-            return Response({'error': 'phone is required'}, status=status.HTTP_400_BAD_REQUEST)
+            phone = request.data.get('phone', '').strip()
+            if not phone:
+                return Response({'error': 'phone is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        rate = check_rate_limit(phone)
-        if not rate['allowed']:
-            return Response(
-                {'error': 'rate_limited', 'wait_seconds': rate['wait_seconds']},
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
+            rate = check_rate_limit(phone)
+            if not rate['allowed']:
+                return Response(
+                    {'error': 'rate_limited', 'wait_seconds': rate['wait_seconds']},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
 
-        # If no user exists, return success silently (prevent phone enumeration)
-        if not User.objects.filter(phone=phone, is_active=True).exists():
+            # If no user exists, return success silently (prevent phone enumeration)
+            if not User.objects.filter(phone=phone, is_active=True).exists():
+                return Response({'success': True, 'expires_in': 100})
+
+            try:
+                has_telegram = (
+                    User.objects
+                    .filter(phone=phone, is_active=True)
+                    .exclude(telegram_chat_id=None)
+                    .exists()
+                )
+            except Exception as db_err:
+                import logging
+                logging.getLogger(__name__).error(
+                    f"telegram_chat_id query failed (run: python manage.py migrate): {db_err}"
+                )
+                has_telegram = False
+
+            if not has_telegram:
+                return Response(
+                    {
+                        'error': 'telegram_not_linked',
+                        'message': 'Avval Telegram botimizga /start yuboring va telefon raqamingizni ulang',
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            code = generate_otp(phone)
+            sent = send_otp_to_telegram(phone, code)
+            if not sent:
+                return Response(
+                    {'error': 'telegram_send_failed', 'message': "Telegram xabar yuborishda xatolik yuz berdi"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            increment_attempts(phone)
             return Response({'success': True, 'expires_in': 100})
 
-        try:
-            has_telegram = (
-                User.objects
-                .filter(phone=phone, is_active=True)
-                .exclude(telegram_chat_id=None)
-                .exists()
-            )
-        except Exception as db_err:
-            # telegram_chat_id column missing — migration 0003 not yet applied
-            import logging
-            logging.getLogger(__name__).error(
-                f"telegram_chat_id query failed (run: python manage.py migrate): {db_err}"
-            )
-            has_telegram = False
-
-        if not has_telegram:
-            return Response(
-                {
-                    'error': 'telegram_not_linked',
-                    'message': 'Avval Telegram botimizga /start yuboring va telefon raqamingizni ulang',
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        code = generate_otp(phone)
-        sent = send_otp_to_telegram(phone, code)
-        if not sent:
-            return Response(
-                {'error': 'telegram_send_failed', 'message': "Telegram xabar yuborishda xatolik yuz berdi"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        increment_attempts(phone)
-        return Response({'success': True, 'expires_in': 100})
+        except Exception as e:
+            print(f"FORGOT PASSWORD ERROR: {e}")
+            print(traceback.format_exc())
+            return Response({'error': 'server_error', 'detail': str(e)}, status=500)
 
 
 class VerifyOtpView(APIView):
