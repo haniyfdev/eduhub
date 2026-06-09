@@ -25,14 +25,19 @@ def get_rate_limit_key(phone: str) -> str:
 
 def check_rate_limit(phone: str) -> dict:
     key = get_rate_limit_key(phone)
-    attempts = cache.get(key, 0)
-    if attempts >= 6:
-        return {"allowed": False, "wait_seconds": 24 * 3600}
-    if attempts >= 5:
-        return {"allowed": False, "wait_seconds": 5 * 3600}
-    if attempts >= 3:
+    attempts = cache.get(key)
+    attempts = int(attempts) if attempts else 0
+
+    if attempts >= 7:
+        return {"allowed": False, "wait_seconds": 86400}
+    elif attempts >= 6:
+        return {"allowed": False, "wait_seconds": 43200}
+    elif attempts >= 5:
+        return {"allowed": False, "wait_seconds": 18000}
+    elif attempts >= 3:
         return {"allowed": False, "wait_seconds": 3600}
-    return {"allowed": True, "wait_seconds": 0}
+    else:
+        return {"allowed": True, "wait_seconds": 0}
 
 
 def increment_attempts(phone: str) -> None:
