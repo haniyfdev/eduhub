@@ -200,10 +200,13 @@ class SuperadminDebtListView(APIView):
         qs = CompanySubscriptionDebt.objects.select_related('company').prefetch_related('payments')
         status_filter = request.query_params.get('status')
         company_filter = request.query_params.get('company')
+        search = request.query_params.get('search', '').strip()
         if status_filter:
             qs = qs.filter(status=status_filter)
         if company_filter:
             qs = qs.filter(company_id=company_filter)
+        if search:
+            qs = qs.filter(company__name__icontains=search)
         return Response(CompanySubscriptionDebtSerializer(qs, many=True).data)
 
 
@@ -259,6 +262,9 @@ class SuperadminPaymentListView(APIView):
 
     def get(self, request):
         qs = CompanySubscriptionPayment.objects.select_related('company', 'recorded_by', 'debt')
+        search = request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(company__name__icontains=search)
         return Response(CompanySubscriptionPaymentSerializer(qs, many=True).data)
 
 
