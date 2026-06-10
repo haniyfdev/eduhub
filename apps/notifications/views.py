@@ -196,6 +196,25 @@ def _send_sms_background(items: list, company_id: str) -> None:
             logger.error(f"SMS_SEND_ERROR: phone={phone}, error={e}")
 
 
+def _send_telegram_background(items: list) -> None:
+    """Sends each (chat_id, message) pair via the Telegram bot.
+    One failure must not stop the rest."""
+    import asyncio
+    from aiogram import Bot
+    from django.conf import settings
+
+    async def _send_all():
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        for chat_id, text in items:
+            try:
+                await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"TELEGRAM_SEND_ERROR: chat_id={chat_id}, error={e}")
+        await bot.session.close()
+
+    asyncio.run(_send_all())
+
+
 class SmsSendView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -246,15 +265,21 @@ class SmsSendView(APIView):
         if not recipients:
             return Response({'error': 'recipients required'}, status=status.HTTP_400_BAD_REQUEST)
 
+        from apps.students.models import Student
+
+        company_name = company.name if company else ''
         items = []
+        telegram_sent = 0
+        skipped = 0
         for recipient in recipients:
             r_phone = recipient.get('phone', '')
             if not r_phone:
                 continue
             r_type = recipient.get('type', 'student')
+            r_id = recipient.get('id')
             if r_type in ('student', 'lead'):
                 try:
-                    uuid.UUID(str(recipient.get('id')))
+                    uuid.UUID(str(r_id))
                 except (ValueError, TypeError, AttributeError):
                     return Response({'error': 'Invalid recipient id'}, status=status.HTTP_400_BAD_REQUEST)
             extra_data = {
@@ -264,20 +289,32 @@ class SmsSendView(APIView):
             resolved = resolve_variables(
                 template_body,
                 recipient.get('type', 'student'),
-                recipient.get('id'),
+                r_id,
                 company,
                 extra_data=extra_data,
             )
-            items.append((r_phone, resolved))
+
+            chat_id = None
+            if r_type == 'student':
+                student = Student.objects.filter(id=r_id).only('telegram_chat_id').first()
+                if student and student.telegram_chat_id:
+                    chat_id = student.telegram_chat_id
+
+            if chat_id:
+                items.append((chat_id, f"📬 <b>{company_name}</b>\n\n{resolved}"))
+                telegram_sent += 1
+            else:
+                logger.warning(f"TELEGRAM_SKIP: recipient_id={r_id}, type={r_type}, no telegram_chat_id linked")
+                skipped += 1
 
         thread = threading.Thread(
-            target=_send_sms_background,
-            args=(items, str(request.user.company_id)),
+            target=_send_telegram_background,
+            args=(items,),
             daemon=True,
         )
         thread.start()
 
-        return Response({'status': 'queued', 'count': len(items)})
+        return Response({'status': 'queued', 'telegram_sent': telegram_sent, 'skipped': skipped})
 
 
 class AnnouncementViewSet(viewsets.ModelViewSet):
