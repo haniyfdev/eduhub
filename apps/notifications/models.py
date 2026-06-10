@@ -6,6 +6,7 @@ class Notification(BaseModel):
     TYPE_CHOICES = [
         ('sms', 'SMS'),
         ('call', 'Call'),
+        ('telegram', 'Telegram'),
     ]
     STATUS_CHOICES = [
         ('pending', 'Pending'),
