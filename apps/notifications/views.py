@@ -307,7 +307,7 @@ class SmsSendView(APIView):
             chat_ids = []
             if r_type == 'student':
                 s = Student.objects.filter(id=r_id).only(
-                    'telegram_chat_id', 'telegram_chat_id_second'
+                    'phone', 'second_phone', 'telegram_chat_id', 'telegram_chat_id_second'
                 ).first()
                 logger.error(
                     f"STUDENT_LOOKUP: id={r_id}, "
@@ -315,10 +315,13 @@ class SmsSendView(APIView):
                     f"chat_id_second={s.telegram_chat_id_second if s else 'NOT FOUND'}"
                 )
                 if s:
-                    if s.telegram_chat_id:
-                        chat_ids.append(s.telegram_chat_id)
-                    if s.telegram_chat_id_second:
-                        chat_ids.append(s.telegram_chat_id_second)
+                    recipient_phone = r_phone.replace(' ', '')
+                    if recipient_phone == s.phone:
+                        chat_ids = [s.telegram_chat_id] if s.telegram_chat_id else []
+                    elif recipient_phone == s.second_phone:
+                        chat_ids = [s.telegram_chat_id_second] if s.telegram_chat_id_second else []
+                    else:
+                        chat_ids = []
 
             if chat_ids:
                 text = f"📬 <b>{company_name}</b>\n\n{resolved}"
