@@ -37,6 +37,7 @@ class Student(BaseModel):
         'leads.Lead', on_delete=models.SET_NULL, null=True, blank=True, related_name='student'
     )
     telegram_chat_id = models.BigIntegerField(null=True, blank=True)
+    telegram_chat_id_second = models.BigIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     archived_at = models.DateTimeField(null=True, blank=True)
 

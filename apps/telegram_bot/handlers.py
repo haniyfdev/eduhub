@@ -118,8 +118,9 @@ def _normalize_phone(phone: str) -> str:
 
 def _find_and_link_account(phone: str, chat_id: int):
     """Match a normalized phone against User then Student (phone or second_phone)
-    and save the Telegram chat_id onto whichever record matches."""
-    from django.db.models import Q
+    and save the Telegram chat_id onto whichever field matches.
+    A match on `phone` saves telegram_chat_id (student); a match on
+    `second_phone` saves telegram_chat_id_second (parent) — never mixed."""
     from apps.users.models import User
     from apps.students.models import Student
 
@@ -129,10 +130,16 @@ def _find_and_link_account(phone: str, chat_id: int):
         user.save(update_fields=['telegram_chat_id'])
         return user
 
-    student = Student.objects.filter(Q(phone=phone) | Q(second_phone=phone)).first()
+    student = Student.objects.filter(phone=phone).first()
     if student:
         student.telegram_chat_id = chat_id
         student.save(update_fields=['telegram_chat_id'])
+        return student
+
+    student = Student.objects.filter(second_phone=phone).first()
+    if student:
+        student.telegram_chat_id_second = chat_id
+        student.save(update_fields=['telegram_chat_id_second'])
         return student
 
     return None

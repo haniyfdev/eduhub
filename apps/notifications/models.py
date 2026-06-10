@@ -37,6 +37,11 @@ class SmsTemplate(BaseModel):
         ('overdue_debt', "Muddati o'tgan qarz"),
         ('custom', 'Boshqa'),
     ]
+    TYPE_CHOICES = [
+        ('student', "O'quvchi"),
+        ('parent', 'Ota-ona'),
+        ('both', 'Ikkalasi'),
+    ]
 
     company = models.ForeignKey(
         'companies.Company', on_delete=models.CASCADE,
@@ -45,6 +50,7 @@ class SmsTemplate(BaseModel):
     name = models.CharField(max_length=100)
     body = models.TextField()
     trigger = models.CharField(max_length=30, choices=TRIGGER_CHOICES, default='custom')
+    type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='student')
     is_active = models.BooleanField(default=True)
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

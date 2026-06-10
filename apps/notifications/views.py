@@ -69,6 +69,7 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
                 company=get_active_company(request),
                 name=instance.name,
                 trigger=instance.trigger,
+                type=request.data.get('type', instance.type),
                 body=request.data.get('body', instance.body),
                 is_default=False,
                 is_active=True,
@@ -253,6 +254,7 @@ class SmsSendView(APIView):
             return Response({'status': 'queued'})
 
         # Structured mode: backend resolves variables per recipient
+        template_type = 'student'
         if template_id:
             try:
                 uuid.UUID(str(template_id))
@@ -261,6 +263,7 @@ class SmsSendView(APIView):
             try:
                 template = SmsTemplate.objects.get(id=template_id)
                 template_body = template.body
+                template_type = template.type
             except SmsTemplate.DoesNotExist:
                 return Response({'error': 'Template not found'}, status=status.HTTP_404_NOT_FOUND)
         elif message:
@@ -303,19 +306,34 @@ class SmsSendView(APIView):
                 extra_data=extra_data,
             )
 
-            chat_id = None
+            chat_ids = []
             if r_type == 'student':
-                student = Student.objects.filter(id=r_id).only('telegram_chat_id').first()
+                s = Student.objects.filter(id=r_id).only(
+                    'telegram_chat_id', 'telegram_chat_id_second'
+                ).first()
                 logger.error(
                     f"STUDENT_LOOKUP: id={r_id}, "
-                    f"chat_id={student.telegram_chat_id if student else 'NOT FOUND'}"
+                    f"chat_id={s.telegram_chat_id if s else 'NOT FOUND'}, "
+                    f"chat_id_second={s.telegram_chat_id_second if s else 'NOT FOUND'}"
                 )
-                if student and student.telegram_chat_id:
-                    chat_id = student.telegram_chat_id
+                if s:
+                    if template_type == 'student':
+                        if s.telegram_chat_id:
+                            chat_ids = [s.telegram_chat_id]
+                    elif template_type == 'parent':
+                        if s.telegram_chat_id_second:
+                            chat_ids = [s.telegram_chat_id_second]
+                    elif template_type == 'both':
+                        if s.telegram_chat_id:
+                            chat_ids.append(s.telegram_chat_id)
+                        if s.telegram_chat_id_second:
+                            chat_ids.append(s.telegram_chat_id_second)
 
-            if chat_id:
-                items.append((chat_id, f"📬 <b>{company_name}</b>\n\n{resolved}"))
-                telegram_sent += 1
+            if chat_ids:
+                text = f"📬 <b>{company_name}</b>\n\n{resolved}"
+                for chat_id in chat_ids:
+                    items.append((chat_id, text))
+                telegram_sent += len(chat_ids)
             else:
                 logger.warning(f"TELEGRAM_SKIP: recipient_id={r_id}, type={r_type}, no telegram_chat_id linked")
                 skipped += 1
