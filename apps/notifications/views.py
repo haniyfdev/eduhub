@@ -254,7 +254,6 @@ class SmsSendView(APIView):
             return Response({'status': 'queued'})
 
         # Structured mode: backend resolves variables per recipient
-        template_type = 'student'
         if template_id:
             try:
                 uuid.UUID(str(template_id))
@@ -263,7 +262,6 @@ class SmsSendView(APIView):
             try:
                 template = SmsTemplate.objects.get(id=template_id)
                 template_body = template.body
-                template_type = template.type
             except SmsTemplate.DoesNotExist:
                 return Response({'error': 'Template not found'}, status=status.HTTP_404_NOT_FOUND)
         elif message:
@@ -317,17 +315,10 @@ class SmsSendView(APIView):
                     f"chat_id_second={s.telegram_chat_id_second if s else 'NOT FOUND'}"
                 )
                 if s:
-                    if template_type == 'student':
-                        if s.telegram_chat_id:
-                            chat_ids = [s.telegram_chat_id]
-                    elif template_type == 'parent':
-                        if s.telegram_chat_id_second:
-                            chat_ids = [s.telegram_chat_id_second]
-                    elif template_type == 'both':
-                        if s.telegram_chat_id:
-                            chat_ids.append(s.telegram_chat_id)
-                        if s.telegram_chat_id_second:
-                            chat_ids.append(s.telegram_chat_id_second)
+                    if s.telegram_chat_id:
+                        chat_ids.append(s.telegram_chat_id)
+                    if s.telegram_chat_id_second:
+                        chat_ids.append(s.telegram_chat_id_second)
 
             if chat_ids:
                 text = f"📬 <b>{company_name}</b>\n\n{resolved}"
