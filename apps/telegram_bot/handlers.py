@@ -116,12 +116,32 @@ def _normalize_phone(phone: str) -> str:
         return f"+998{digits}"
 
 
+def _find_and_link_account(phone: str, chat_id: int):
+    """Match a normalized phone against User then Student (phone or second_phone)
+    and save the Telegram chat_id onto whichever record matches."""
+    from django.db.models import Q
+    from apps.users.models import User
+    from apps.students.models import Student
+
+    user = User.objects.filter(phone=phone, is_active=True).first()
+    if user:
+        user.telegram_chat_id = chat_id
+        user.save(update_fields=['telegram_chat_id'])
+        return user
+
+    student = Student.objects.filter(Q(phone=phone) | Q(second_phone=phone)).first()
+    if student:
+        student.telegram_chat_id = chat_id
+        student.save(update_fields=['telegram_chat_id'])
+        return student
+
+    return None
+
+
 @router.message(F.contact)
 async def contact_handler(message: Message) -> None:
     from asgiref.sync import sync_to_async
     from django.core.cache import cache
-    from apps.users.models import User
-    from apps.students.models import Student
 
     phone = _normalize_phone(message.contact.phone_number or '')
     chat_id = message.chat.id
@@ -129,25 +149,10 @@ async def contact_handler(message: Message) -> None:
     def _get_lang():
         return cache.get(f"bot_lang:{chat_id}", 'uz')
 
-    def _link():
-        user = User.objects.filter(phone=phone, is_active=True).first()
-        if user:
-            user.telegram_chat_id = chat_id
-            user.save(update_fields=['telegram_chat_id'])
-            return user
-
-        student = Student.objects.filter(phone=phone).first()
-        if student:
-            student.telegram_chat_id = chat_id
-            student.save(update_fields=['telegram_chat_id'])
-            return student
-
-        return None
-
     lang = await sync_to_async(_get_lang)()
-    user = await sync_to_async(_link)()
+    account = await sync_to_async(_find_and_link_account)(phone, chat_id)
 
-    if user:
+    if account:
         await message.answer(_SUCCESS[lang], reply_markup=ReplyKeyboardRemove())
     else:
         await message.answer(_ERROR[lang].format(phone=phone), reply_markup=ReplyKeyboardRemove())

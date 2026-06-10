@@ -3,7 +3,11 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from apps.students.models import Student
+from apps.notifications.models import SmsTemplate
+
 WEBHOOK_URL = '/api/telegram/webhook/'
+SEND_SMS_URL = '/api/v1/notifications/send-sms/'
 
 
 def run(coro):
@@ -72,8 +76,10 @@ class TestContactHandler:
         with (
             patch('asgiref.sync.sync_to_async', _fake_sync_to_async),
             patch('apps.users.models.User.objects') as mock_objects,
+            patch('apps.students.models.Student.objects') as mock_student_objects,
         ):
             mock_objects.filter.return_value.first.return_value = mock_user
+            mock_student_objects.filter.return_value.first.return_value = None
             if mock_user:
                 mock_user.save = MagicMock()
             run(contact_handler(message))
@@ -140,4 +146,103 @@ class TestWebhookEndpoint:
             data="not json",
             content_type='application/json',
         )
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Tests 1-2 — _find_and_link_account falls back to Student (phone / second_phone)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestFindAndLinkAccount:
+    # Test 1 — student found by primary phone → chat_id saved
+    def test_student_found_by_primary_phone_saves_chat_id(self, company):
+        from apps.telegram_bot.handlers import _find_and_link_account
+
+        student = Student.objects.create(
+            company=company, first_name="Aziz", last_name="Karimov",
+            phone="+998901112233", status="active",
+        )
+
+        result = _find_and_link_account("+998901112233", 11111)
+
+        student.refresh_from_db()
+        assert result.id == student.id
+        assert student.telegram_chat_id == 11111
+
+    # Test 2 — student found by second_phone → chat_id saved
+    def test_student_found_by_second_phone_saves_chat_id(self, company):
+        from apps.telegram_bot.handlers import _find_and_link_account
+
+        student = Student.objects.create(
+            company=company, first_name="Vali", last_name="Tosh",
+            phone="+998901112299", second_phone="+998950269345", status="active",
+        )
+
+        result = _find_and_link_account("+998950269345", 22222)
+
+        student.refresh_from_db()
+        assert result.id == student.id
+        assert student.telegram_chat_id == 22222
+
+
+# ---------------------------------------------------------------------------
+# Test 3 — contact handler: phone not found in User or Student → error message
+# ---------------------------------------------------------------------------
+
+class TestContactHandlerNotFound:
+    def test_phone_not_found_anywhere_sends_error(self):
+        from apps.telegram_bot.handlers import contact_handler
+
+        message = _contact_message("+998999999999", chat_id=33333)
+
+        with (
+            patch('asgiref.sync.sync_to_async', _fake_sync_to_async),
+            patch('apps.users.models.User.objects') as mock_user_objects,
+            patch('apps.students.models.Student.objects') as mock_student_objects,
+        ):
+            mock_user_objects.filter.return_value.first.return_value = None
+            mock_student_objects.filter.return_value.first.return_value = None
+            run(contact_handler(message))
+
+        text = message.answer.call_args.args[0]
+        assert "+998999999999" in text
+
+
+# ---------------------------------------------------------------------------
+# Tests 4-5 — /api/v1/notifications/send-sms/
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestSendSmsEndpoint:
+    # Test 4 — valid template + valid student → 200
+    def test_send_sms_returns_200_with_valid_template_and_student(self, boss_client, company, student):
+        template = SmsTemplate.objects.create(
+            company=company, name="Test", body="Hello {student_name}",
+        )
+
+        resp = boss_client.post(SEND_SMS_URL, {
+            'template_id': str(template.id),
+            'message': None,
+            'recipients': [
+                {'type': 'student', 'id': str(student.id), 'phone': student.phone, 'amount': '', 'due_date': ''},
+            ],
+        }, format='json')
+
+        assert resp.status_code == 200
+
+    # Test 5 — malformed recipient id → 400, not 500
+    def test_send_sms_returns_400_with_invalid_student_id(self, boss_client, company):
+        template = SmsTemplate.objects.create(
+            company=company, name="Test2", body="Hello {student_name}",
+        )
+
+        resp = boss_client.post(SEND_SMS_URL, {
+            'template_id': str(template.id),
+            'message': None,
+            'recipients': [
+                {'type': 'student', 'id': 'not-a-valid-uuid', 'phone': '+998901234567', 'amount': '', 'due_date': ''},
+            ],
+        }, format='json')
+
         assert resp.status_code == 400

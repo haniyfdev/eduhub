@@ -1,5 +1,6 @@
 import logging
 import re
+import uuid
 
 from rest_framework import status, viewsets, mixins
 
@@ -206,6 +207,10 @@ class SmsSendView(APIView):
         # Structured mode: backend resolves variables per recipient
         if template_id:
             try:
+                uuid.UUID(str(template_id))
+            except (ValueError, TypeError, AttributeError):
+                return Response({'error': 'Invalid template_id'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
                 template = SmsTemplate.objects.get(id=template_id)
                 template_body = template.body
             except SmsTemplate.DoesNotExist:
@@ -225,6 +230,12 @@ class SmsSendView(APIView):
             r_phone = recipient.get('phone', '')
             if not r_phone:
                 continue
+            r_type = recipient.get('type', 'student')
+            if r_type in ('student', 'lead'):
+                try:
+                    uuid.UUID(str(recipient.get('id')))
+                except (ValueError, TypeError, AttributeError):
+                    return Response({'error': 'Invalid recipient id'}, status=status.HTTP_400_BAD_REQUEST)
             extra_data = {
                 'amount':   recipient.get('amount', ''),
                 'due_date': recipient.get('due_date', ''),
