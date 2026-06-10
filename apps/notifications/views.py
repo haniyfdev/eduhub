@@ -1,5 +1,6 @@
 import logging
 import re
+import threading
 import uuid
 
 from rest_framework import status, viewsets, mixins
@@ -183,12 +184,22 @@ def resolve_variables(body: str, recipient_type: str, recipient_id: str, company
     return re.sub(r'\{(\w+)\}', replacer, body)
 
 
+def _send_sms_background(items: list, company_id: str) -> None:
+    """Sends each (phone, message) pair via send_sms_task synchronously
+    in a background thread. One failure must not stop the rest."""
+    from apps.notifications.tasks import send_sms_task
+
+    for phone, text in items:
+        try:
+            send_sms_task(company_id=company_id, phone=phone, message=text)
+        except Exception as e:
+            logger.error(f"SMS_SEND_ERROR: phone={phone}, error={e}")
+
+
 class SmsSendView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from apps.notifications.tasks import send_sms_task
-
         logger.error(
             "SEND_SMS: template_id=%s, message=%s, recipients=%s",
             request.data.get('template_id'),
@@ -205,12 +216,13 @@ class SmsSendView(APIView):
 
         # Simple mode: single phone + pre-resolved message, no recipients list
         if phone and message and not recipients:
-            send_sms_task.delay(
-                company_id=str(request.user.company_id),
-                phone=phone,
-                message=message,
+            thread = threading.Thread(
+                target=_send_sms_background,
+                args=([(phone, message)], str(request.user.company_id)),
+                daemon=True,
             )
-            return Response({'status': 'sent'})
+            thread.start()
+            return Response({'status': 'queued'})
 
         # Structured mode: backend resolves variables per recipient
         if template_id:
@@ -234,6 +246,7 @@ class SmsSendView(APIView):
         if not recipients:
             return Response({'error': 'recipients required'}, status=status.HTTP_400_BAD_REQUEST)
 
+        items = []
         for recipient in recipients:
             r_phone = recipient.get('phone', '')
             if not r_phone:
@@ -255,13 +268,16 @@ class SmsSendView(APIView):
                 company,
                 extra_data=extra_data,
             )
-            send_sms_task.delay(
-                company_id=str(request.user.company_id),
-                phone=r_phone,
-                message=resolved,
-            )
+            items.append((r_phone, resolved))
 
-        return Response({'status': 'sent', 'count': len(recipients)})
+        thread = threading.Thread(
+            target=_send_sms_background,
+            args=(items, str(request.user.company_id)),
+            daemon=True,
+        )
+        thread.start()
+
+        return Response({'status': 'queued', 'count': len(items)})
 
 
 class AnnouncementViewSet(viewsets.ModelViewSet):
