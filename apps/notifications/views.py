@@ -207,12 +207,21 @@ def _send_telegram_background(items: list) -> None:
         bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
         for chat_id, text in items:
             try:
+                logger.error(f"TELEGRAM_ATTEMPTING: chat_id={chat_id}")
                 await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+                logger.error(f"TELEGRAM_SENT_OK: chat_id={chat_id}")
             except Exception as e:
                 logger.error(f"TELEGRAM_SEND_ERROR: chat_id={chat_id}, error={e}")
         await bot.session.close()
 
-    asyncio.run(_send_all())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_send_all())
+    except Exception as e:
+        logger.error(f"TELEGRAM_LOOP_ERROR: {e}")
+    finally:
+        loop.close()
 
 
 class SmsSendView(APIView):
@@ -297,6 +306,10 @@ class SmsSendView(APIView):
             chat_id = None
             if r_type == 'student':
                 student = Student.objects.filter(id=r_id).only('telegram_chat_id').first()
+                logger.error(
+                    f"STUDENT_LOOKUP: id={r_id}, "
+                    f"chat_id={student.telegram_chat_id if student else 'NOT FOUND'}"
+                )
                 if student and student.telegram_chat_id:
                     chat_id = student.telegram_chat_id
 
