@@ -1,3 +1,5 @@
+import re
+
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import (
@@ -104,11 +106,14 @@ async def language_callback(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-def _normalize_phone(raw: str) -> str:
-    raw = raw.strip()
-    if not raw.startswith('+'):
-        raw = '+' + raw
-    return raw
+def _normalize_phone(phone: str) -> str:
+    digits = re.sub(r'\D', '', phone)
+    if digits.startswith('998'):
+        return f"+{digits}"
+    elif digits.startswith('0'):
+        return f"+998{digits[1:]}"
+    else:
+        return f"+998{digits}"
 
 
 @router.message(F.contact)
@@ -116,6 +121,7 @@ async def contact_handler(message: Message) -> None:
     from asgiref.sync import sync_to_async
     from django.core.cache import cache
     from apps.users.models import User
+    from apps.students.models import Student
 
     phone = _normalize_phone(message.contact.phone_number or '')
     chat_id = message.chat.id
@@ -128,7 +134,15 @@ async def contact_handler(message: Message) -> None:
         if user:
             user.telegram_chat_id = chat_id
             user.save(update_fields=['telegram_chat_id'])
-        return user
+            return user
+
+        student = Student.objects.filter(phone=phone).first()
+        if student:
+            student.telegram_chat_id = chat_id
+            student.save(update_fields=['telegram_chat_id'])
+            return student
+
+        return None
 
     lang = await sync_to_async(_get_lang)()
     user = await sync_to_async(_link)()
