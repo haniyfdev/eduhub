@@ -49,4 +49,4 @@ def increment_attempts(phone: str) -> None:
     key = get_rate_limit_key(phone)
     r = get_redis()
     r.incr(key)
-    r.expire(key, 24 * 3600)
+    r.expire(key, 1800)

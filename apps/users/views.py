@@ -297,7 +297,13 @@ class VerifyOtpView(APIView):
             return Response({'error': 'invalid_otp'}, status=status.HTTP_400_BAD_REQUEST)
 
         from utils.otp import get_redis, get_rate_limit_key
-        get_redis().delete(get_rate_limit_key(phone))
+        import logging
+        logger = logging.getLogger(__name__)
+
+        key = get_rate_limit_key(phone)
+        deleted = get_redis().delete(key)
+        logger.error(f"OTP_ATTEMPTS_CLEARED: {key} deleted={deleted}")
+
         reset_token = signing.dumps({'phone': phone}, salt=_RESET_SALT)
         return Response({'reset_token': reset_token})
 

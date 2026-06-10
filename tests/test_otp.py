@@ -73,7 +73,7 @@ class TestRateLimit:
 
         assert check_rate_limit(PHONE) == {"allowed": False, "wait_seconds": 86400}
 
-    def test_key_ttl_set_to_24_hours(self, fake_redis):
+    def test_key_ttl_set_to_30_minutes(self, fake_redis):
         increment_attempts(PHONE)
 
-        assert fake_redis.ttl(get_rate_limit_key(PHONE)) == 24 * 3600
+        assert fake_redis.ttl(get_rate_limit_key(PHONE)) == 1800
