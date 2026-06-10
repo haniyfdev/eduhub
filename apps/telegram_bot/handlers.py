@@ -54,28 +54,10 @@ _SUCCESS = {
     ),
 }
 
-_NOT_FOUND = {
-    'uz': "❌ Bu raqam ({phone}) tizimda topilmadi.",
-    'ru': "❌ Номер ({phone}) не найден в системе.",
-    'en': "❌ Number ({phone}) was not found in the system.",
-}
-
-_STUDENT_SUCCESS = {
-    'uz': (
-        "🎉 Tabriklaymiz, {first_name}!\n\n"
-        "✅ Telefon raqamingiz EduHub platformasiga muvaffaqiyatli ulandi.\n"
-        "📚 Endi o'quv markazingizdan xabarlar shu yerga keladi!"
-    ),
-    'ru': (
-        "🎉 Поздравляем, {first_name}!\n\n"
-        "✅ Ваш номер успешно привязан к платформе EduHub.\n"
-        "📚 Теперь сообщения от вашего учебного центра будут приходить сюда!"
-    ),
-    'en': (
-        "🎉 Congratulations, {first_name}!\n\n"
-        "✅ Your number has been successfully linked to EduHub.\n"
-        "📚 Messages from your education center will now arrive here!"
-    ),
+_ERROR = {
+    'uz': "❌ Bu raqam ({phone}) tizimda topilmadi. Boshqa raqam bilan urinib ko'ring.",
+    'ru': "❌ Номер ({phone}) не найден в системе. Попробуйте другой номер.",
+    'en': "❌ Number ({phone}) not found in the system. Try another number.",
 }
 
 
@@ -134,7 +116,6 @@ async def contact_handler(message: Message) -> None:
     from asgiref.sync import sync_to_async
     from django.core.cache import cache
     from apps.users.models import User
-    from apps.students.models import Student
 
     phone = _normalize_phone(message.contact.phone_number or '')
     chat_id = message.chat.id
@@ -142,33 +123,17 @@ async def contact_handler(message: Message) -> None:
     def _get_lang():
         return cache.get(f"bot_lang:{chat_id}", 'uz')
 
-    def _link_user():
+    def _link():
         user = User.objects.filter(phone=phone, is_active=True).first()
         if user:
             user.telegram_chat_id = chat_id
             user.save(update_fields=['telegram_chat_id'])
         return user
 
-    def _link_student():
-        student = Student.objects.filter(phone=phone).exclude(status='archived').first()
-        if student:
-            student.telegram_chat_id = chat_id
-            student.save(update_fields=['telegram_chat_id'])
-        return student
-
     lang = await sync_to_async(_get_lang)()
-    user = await sync_to_async(_link_user)()
+    user = await sync_to_async(_link)()
 
     if user:
         await message.answer(_SUCCESS[lang], reply_markup=ReplyKeyboardRemove())
-        return
-
-    student = await sync_to_async(_link_student)()
-    if student:
-        await message.answer(
-            _STUDENT_SUCCESS[lang].format(first_name=student.first_name),
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        return
-
-    await message.answer(_NOT_FOUND[lang].format(phone=phone), reply_markup=ReplyKeyboardRemove())
+    else:
+        await message.answer(_ERROR[lang].format(phone=phone), reply_markup=ReplyKeyboardRemove())

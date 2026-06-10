@@ -29,7 +29,7 @@ class StudentSerializer(serializers.ModelSerializer):
         model = Student
         fields = (
             'id', 'company', 'first_name', 'last_name', 'phone', 'second_phone',
-            'birth_date', 'telegram_chat_id',
+            'birth_date',
             'current_group', 'current_group_id', 'last_group',
             'group_memberships_data',
             'referral_source', 'status', 'archive_reason', 'created_at', 'archived_at',
