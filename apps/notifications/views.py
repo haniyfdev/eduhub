@@ -189,9 +189,17 @@ class SmsSendView(APIView):
     def post(self, request):
         from apps.notifications.tasks import send_sms_task
 
+        logger.error(
+            "SEND_SMS: template_id=%s, message=%s, recipients=%s",
+            request.data.get('template_id'),
+            request.data.get('message'),
+            request.data.get('recipients'),
+        )
+
         recipients = request.data.get('recipients', [])
         template_id = request.data.get('template_id')
-        message = request.data.get('message')
+        # message may be explicitly null (JSON) — normalize to None so falsy checks below are safe
+        message = request.data.get('message') or None
         phone = request.data.get('phone')
         company = getattr(request.user, 'company', None)
 
