@@ -1,3 +1,5 @@
+import logging
+import threading
 from decimal import Decimal, InvalidOperation
 from datetime import date
 
@@ -22,6 +24,34 @@ from .serializers import (
     CompanySubscriptionPaymentSerializer,
     SubscriptionPlanSerializer,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _broadcast_telegram(chat_ids, text):
+    """Sends `text` to every chat_id via the Telegram bot.
+    One failure must not stop the rest."""
+    import asyncio
+    from aiogram import Bot
+    from django.conf import settings
+
+    async def _send():
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        for chat_id in chat_ids:
+            try:
+                await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"BROADCAST_ERROR: chat_id={chat_id}, error={e}")
+        await bot.session.close()
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_send())
+    except Exception as e:
+        logger.error(f"BROADCAST_LOOP_ERROR: {e}")
+    finally:
+        loop.close()
 
 
 class SuperadminCompanyListView(APIView):
@@ -557,6 +587,44 @@ class SuperadminDashboardView(APIView):
             'revenue_trend': revenue_trend,
             'companies_table': companies_table,
         })
+
+
+class SuperadminBroadcastView(APIView):
+    """POST /api/superadmin/broadcast/
+
+    Sends a Telegram message to every student and staff member (across all
+    companies) that has a linked Telegram chat.
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request):
+        message = (request.data.get('message') or '').strip()
+        if not message:
+            return Response({'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.students.models import Student
+
+        student_chat_ids = list(
+            Student.objects.filter(telegram_chat_id__isnull=False)
+            .values_list('telegram_chat_id', flat=True)
+        )
+        staff_chat_ids = list(
+            User.objects.filter(telegram_chat_id__isnull=False)
+            .values_list('telegram_chat_id', flat=True)
+        )
+
+        all_chat_ids = student_chat_ids + staff_chat_ids
+        formatted_message = f"📢 <b>EduHub xabarnomasi</b>\n\n{message}"
+
+        if all_chat_ids:
+            thread = threading.Thread(
+                target=_broadcast_telegram,
+                args=(all_chat_ids, formatted_message),
+                daemon=True,
+            )
+            thread.start()
+
+        return Response({'queued': len(all_chat_ids)})
 
 
 class SuperadminLogViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):

@@ -14,6 +14,7 @@ from .views import (
     SuperadminSubscriptionView,
     SuperadminDashboardView,
     SuperadminLogViewSet,
+    SuperadminBroadcastView,
 )
 
 router = DefaultRouter()
@@ -32,5 +33,6 @@ urlpatterns = [
     path('plan/', SuperadminPlanView.as_view(), name='superadmin-plan'),
     path('revenue/', SuperadminRevenueView.as_view(), name='superadmin-revenue'),
     path('subscriptions/', SuperadminSubscriptionView.as_view(), name='superadmin-subscriptions'),
+    path('broadcast/', SuperadminBroadcastView.as_view(), name='superadmin-broadcast'),
     path('', include(router.urls)),
 ]
