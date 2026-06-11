@@ -32,7 +32,8 @@ class PaymentViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
         return PaymentSerializer
 
     def get_queryset(self):
-        from django.db.models import Q
+        from django.db.models import Q, Value
+        from django.db.models.functions import Concat
         qs = super().get_queryset()
         month = self.request.query_params.get('month')
         if month:
@@ -46,10 +47,17 @@ class PaymentViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
             q = (
                 Q(group_student__student__first_name__icontains=search) |
                 Q(group_student__student__last_name__icontains=search) |
+                Q(group_student__student__phone__icontains=search) |
                 Q(group_student__group__gender_type__icontains=search)
             )
             if search.isdigit():
                 q |= Q(group_student__group__number=int(search))
+            else:
+                q |= Q(id__in=Payment.objects.annotate(
+                    full_name=Concat(
+                        'group_student__student__first_name', Value(' '), 'group_student__student__last_name'
+                    )
+                ).filter(full_name__icontains=search).values('id'))
             qs = qs.filter(q).distinct()
         return qs
 

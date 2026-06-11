@@ -1,4 +1,5 @@
-from django.db.models import Case, IntegerField, Q, When
+from django.db.models import Case, IntegerField, Q, Value, When
+from django.db.models.functions import Concat
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -67,10 +68,17 @@ class DebtViewSet(
             q = (
                 Q(group_student__student__first_name__icontains=search) |
                 Q(group_student__student__last_name__icontains=search) |
+                Q(group_student__student__phone__icontains=search) |
                 Q(group_student__group__gender_type__icontains=search)
             )
             if search.isdigit():
                 q |= Q(group_student__group__number=int(search))
+            else:
+                q |= Q(id__in=Debt.objects.annotate(
+                    full_name=Concat(
+                        'group_student__student__first_name', Value(' '), 'group_student__student__last_name'
+                    )
+                ).filter(full_name__icontains=search).values('id'))
             qs = qs.filter(q).distinct()
 
         return qs
