@@ -215,6 +215,44 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             'manual_amount_set':   salary.manual_amount_set,
         })
 
+    def _archived_students_for_group(self, group, salary_type, salary_percent, per_student_amt, course_price):
+        """Debt contributions of students who left this specific group.
+
+        coefficient mirrors calculate_teacher_salary(): the share of each
+        student's debt that becomes this teacher's salary.
+        """
+        from django.db.models import Q
+        from apps.groups.models import GroupStudent
+        from apps.debts.models import Debt
+
+        if not group or salary_type not in ('percent', 'per_student'):
+            return []
+
+        if salary_type == 'percent':
+            coefficient = float(salary_percent or 0) / 100
+        else:
+            course_price = float(course_price or 0)
+            coefficient = (float(per_student_amt or 0) / course_price) if course_price > 0 else 0
+
+        former_gs_ids = GroupStudent.objects.filter(group=group).filter(
+            Q(status='left') | Q(student__status='archived')
+        ).values_list('id', flat=True)
+
+        debts = Debt.objects.filter(
+            group_student_id__in=former_gs_ids,
+        ).select_related('group_student__student')
+
+        archived_students = []
+        for debt in debts:
+            student = debt.group_student.student
+            original_amount = float(debt.amount)
+            archived_students.append({
+                'student_name': f"{student.first_name} {student.last_name}".strip(),
+                'original_amount': original_amount,
+                'calculated_amount': round(original_amount * coefficient),
+            })
+        return archived_students
+
     def list(self, request, *args, **kwargs):
         """Return salaries grouped by teacher."""
         salaries = list(self.get_queryset())
@@ -291,6 +329,11 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 'course_price':       float(sdata['course_price'] or 0),
                 'kpi_amount':         kpi,
                 'archive_billing_type': salary.archive_billing_type,
+                'archived_students':  self._archived_students_for_group(
+                    salary.group, sdata.get('salary_type'),
+                    sdata.get('salary_percent'), sdata.get('per_student_amt'),
+                    sdata.get('course_price'),
+                ),
             })
 
         # For fixed salary: replace null-group entry with teacher's actual active groups (display only)
