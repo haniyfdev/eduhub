@@ -93,6 +93,8 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
             .order_by('-absent')
         )
 
+        rows = list(rows)
+
         from apps.groups.models import GroupStudent
         if user.role == 'superadmin':
             memberships = GroupStudent.objects.filter(left_at__isnull=True).select_related('group__course')
@@ -105,6 +107,22 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
         group_map = {str(m.student_id): m.group.display_name for m in memberships}
         course_map = {str(m.student_id): m.group.course.name for m in memberships}
 
+        # Students whose memberships have all left (e.g. archived students)
+        # don't have an entry above — fall back to their last membership
+        # regardless of status, so group/course still display.
+        missing_ids = [row['student__id'] for row in rows if str(row['student__id']) not in group_map]
+        last_memberships = GroupStudent.objects.filter(
+            student_id__in=missing_ids,
+        ).select_related('group__course').order_by('student_id', '-left_at', '-joined_at')
+
+        last_group_map = {}
+        last_course_map = {}
+        for m in last_memberships:
+            sid = str(m.student_id)
+            if sid not in last_group_map:
+                last_group_map[sid] = m.group.display_name
+                last_course_map[sid] = m.group.course.name
+
         result = []
         for row in rows:
             sid = str(row['student__id'])
@@ -116,8 +134,8 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                 'student_name': f"{row['student__first_name']} {row['student__last_name']}",
                 'phone': row['student__phone'],
                 'second_phone': row['student__second_phone'] or None,
-                'group': group_map.get(sid, '—'),
-                'course': course_map.get(sid, '—'),
+                'group': group_map.get(sid) or last_group_map.get(sid, '—'),
+                'course': course_map.get(sid) or last_course_map.get(sid, '—'),
                 'total': total,
                 'present': present,
                 'absent': row['absent'],
