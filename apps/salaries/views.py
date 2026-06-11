@@ -313,6 +313,15 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             entry['total_paid'] += float(salary.paid_amount)
             entry['total_owed'] += total_owed
 
+            # No group on the salary record (fixed-salary teachers, often
+            # archived with no remaining groups) — fall back to the salary's
+            # billing month so "Maosh qayd kuni" never shows "—".
+            first_active_date = sdata['first_active_date']
+            if not first_active_date:
+                first_active_date = (
+                    salary.month.isoformat() if hasattr(salary.month, 'isoformat') else str(salary.month)
+                )
+
             entry['groups'].append({
                 'salary_id':          str(salary.id),
                 'group_id':           sdata['group_id'],
@@ -324,7 +333,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 'total_owed':         total_owed,
                 'status':             salary.status,
                 'due_date':           sdata['due_date'],
-                'first_active_date':  sdata['first_active_date'],
+                'first_active_date':  first_active_date,
                 'student_count':      sdata['student_count'],
                 'course_price':       float(sdata['course_price'] or 0),
                 'kpi_amount':         kpi,
@@ -368,7 +377,9 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                         dt = first_gs.joined_at
                         first_active_date = dt.date().isoformat() if hasattr(dt, 'date') else str(dt)
                     else:
-                        first_active_date = None
+                        # No enrollment data for this group — fall back to the
+                        # salary's billing month (already non-null) so "—" never appears.
+                        first_active_date = entry['groups'][0]['first_active_date'] if entry['groups'] else None
                     display_groups.append({
                         'salary_id':         entry['groups'][0]['salary_id'] if entry['groups'] else '',
                         'group_id':          str(g.id),
