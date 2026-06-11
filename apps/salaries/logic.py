@@ -90,12 +90,16 @@ def calculate_teacher_salary(teacher, month):
             group=group,
         ).first()
 
-        # Sum of debts owed by students in this group for the billing month
+        # Sum of debts owed by students in this group for the billing month.
+        # Debt.due_date is rolled forward ~1 month per cycle (see
+        # apps/debts/scheduler.py), so a debt billed for `month` carries a
+        # due_date in the following month.
+        next_month = month + relativedelta(months=1)
         agg = Debt.objects.filter(
             group_student__group=group,
             company=teacher.company,
-            due_date__year=month.year,
-            due_date__month=month.month,
+            due_date__year=next_month.year,
+            due_date__month=next_month.month,
         ).aggregate(total=Sum('amount'))
         group_debt_sum = Decimal(str(agg['total'] or 0))
 
