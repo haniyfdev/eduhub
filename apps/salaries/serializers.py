@@ -17,6 +17,7 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
     first_active_date = serializers.SerializerMethodField()
     carry_over        = serializers.SerializerMethodField()
     total_owed        = serializers.SerializerMethodField()
+    due_date          = serializers.SerializerMethodField()
 
     class Meta:
         model = TeacherSalary
@@ -72,6 +73,15 @@ class TeacherSalarySerializer(serializers.ModelSerializer):
         if hasattr(dt, 'date'):
             return dt.date().isoformat()
         return str(dt)
+
+    def get_due_date(self, obj):
+        # percent/per_student records never get a due_date set during calculation
+        # (only fixed-salary records do) — fall back to the next month, mirroring
+        # the fixed-salary default, so "Oxirgi muddat" is always populated.
+        if obj.due_date:
+            return obj.due_date
+        from dateutil.relativedelta import relativedelta
+        return obj.month + relativedelta(months=1)
 
     def get_carry_over(self, obj):
         # carry_over is now stored in the DB by calculate_teacher_salary

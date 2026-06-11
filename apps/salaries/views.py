@@ -361,6 +361,14 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                     student_count = GroupStudent.objects.filter(
                         group=g, left_at__isnull=True, student__status='active'
                     ).count()
+                    first_gs = GroupStudent.objects.filter(
+                        group=g, student__status__in=['active', 'archived'],
+                    ).order_by('joined_at').first()
+                    if first_gs and first_gs.joined_at:
+                        dt = first_gs.joined_at
+                        first_active_date = dt.date().isoformat() if hasattr(dt, 'date') else str(dt)
+                    else:
+                        first_active_date = None
                     display_groups.append({
                         'salary_id':         entry['groups'][0]['salary_id'] if entry['groups'] else '',
                         'group_id':          str(g.id),
@@ -372,7 +380,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                         'total_owed':        0,
                         'status':            entry['groups'][0]['status'] if entry['groups'] else 'unpaid',
                         'due_date':          entry['groups'][0]['due_date'] if entry['groups'] else None,
-                        'first_active_date': None,
+                        'first_active_date': first_active_date,
                         'student_count':     student_count,
                         'course_price':      float(g.course.price) if g.course else 0,
                         'kpi_amount':        0,
