@@ -18,6 +18,10 @@ def on_student_status_change(sender, instance, **kwargs):
         _create_debt(instance)
         _update_lead(instance)
 
+    # → archived bo'ldi: guruh a'zoliklarini "left" holatiga o'tkazish
+    if old.status != 'archived' and instance.status == 'archived':
+        _close_group_memberships(instance)
+
 
 def _create_debt(student):
     from datetime import timedelta
@@ -47,6 +51,15 @@ def _create_debt(student):
             'status': 'unpaid',
         },
     )
+
+
+def _close_group_memberships(student):
+    from django.utils import timezone
+    from apps.groups.models import GroupStudent
+
+    GroupStudent.objects.filter(
+        student=student, left_at__isnull=True
+    ).update(status='left', left_at=timezone.now())
 
 
 def _update_lead(student):
