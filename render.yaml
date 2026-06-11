@@ -3,10 +3,12 @@ services:
     name: eduhub-web
     env: python
     buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py create_superadmin --phone='+998951108353' --password='ahlanva123sahlan' --first_name='Haniyf' --last_name='EduHub' --force"
-    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers $WEB_CONCURRENCY --timeout 120"
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.production
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY

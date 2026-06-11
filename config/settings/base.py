@@ -25,6 +25,7 @@ THIRD_PARTY_APPS = [
     'django_filters',
     'corsheaders',
     'django_celery_beat',
+    'django_apscheduler',
 ]
 
 LOCAL_APPS = [
@@ -53,6 +54,7 @@ LOCAL_APPS = [
     'apps.rooms',
     'apps.sms',
     'apps.telegram_bot',
+    'apps.scheduler',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -163,6 +165,9 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
+APSCHEDULER_RUN_NOW_TIMEOUT = 25
 
 ESKIZ_EMAIL = config('ESKIZ_EMAIL', default='')
 ESKIZ_PASSWORD = config('ESKIZ_PASSWORD', default='')
