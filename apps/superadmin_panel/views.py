@@ -614,7 +614,7 @@ class SuperadminBroadcastView(APIView):
         )
 
         all_chat_ids = student_chat_ids + staff_chat_ids
-        formatted_message = f"📢 <b>EduHub xabarnomasi</b>\n\n{message}"
+        formatted_message = f"📢 <b>EduHub ma'muriyati</b>\n\n{message}"
 
         if all_chat_ids:
             thread = threading.Thread(
