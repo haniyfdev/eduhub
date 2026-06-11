@@ -56,7 +56,8 @@ class StudentSerializer(serializers.ModelSerializer):
 
     def get_group_memberships_data(self, obj):
         if obj.status == 'archived':
-            memberships = obj.group_memberships.select_related(
+            from apps.groups.models import GroupStudent
+            memberships = GroupStudent.objects.filter(student=obj).select_related(
                 'group__course'
             ).order_by('-joined_at')[:1]
         else:
