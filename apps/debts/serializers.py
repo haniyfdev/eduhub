@@ -23,10 +23,10 @@ class DebtSerializer(serializers.ModelSerializer):
             'id', 'company', 'group_student',
             'student_id', 'student_name', 'student_phone', 'student_second_phone', 'student_status',
             'group_name', 'group_id', 'course_id', 'course_name',
-            'amount', 'paid_amount', 'due_date', 'status', 'updated_at',
+            'amount', 'paid_amount', 'due_date', 'status', 'updated_at', 'confirmed_at',
             'group_student_status', 'group_student_left_at', 'archive_billing_type',
         )
-        read_only_fields = ('id', 'company', 'updated_at')
+        read_only_fields = ('id', 'company', 'updated_at', 'confirmed_at')
 
     def get_student_name(self, obj):
         s = obj.group_student.student
@@ -53,4 +53,11 @@ class DebtSerializer(serializers.ModelSerializer):
 class DebtUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Debt
-        fields = ('status', 'amount')
+        fields = ('status', 'amount', 'confirmed_at')
+        read_only_fields = ('confirmed_at',)
+
+    def update(self, instance, validated_data):
+        if 'amount' in validated_data:
+            from django.utils import timezone
+            validated_data['confirmed_at'] = timezone.now()
+        return super().update(instance, validated_data)

@@ -20,6 +20,7 @@ class Debt(BaseModel):
     )
     discount_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     updated_at      = models.DateTimeField(auto_now=True)
+    confirmed_at    = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'debts'

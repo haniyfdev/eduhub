@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Case, IntegerField, Q, When
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -37,8 +37,21 @@ class DebtViewSet(
             return DebtUpdateSerializer
         return DebtSerializer
 
+    def filter_queryset(self, queryset):
+        queryset = super().filter_queryset(queryset)
+        existing_order = [f for f in queryset.query.order_by if f.lstrip('-') != 'is_archived']
+        return queryset.order_by('is_archived', *existing_order)
+
     def get_queryset(self):
         qs = super().get_queryset()
+
+        qs = qs.annotate(
+            is_archived=Case(
+                When(group_student__student__status='archived', then=0),
+                default=1,
+                output_field=IntegerField(),
+            )
+        )
 
         status_param = self.request.query_params.get('status', '')
         if status_param:
