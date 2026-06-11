@@ -47,7 +47,8 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         return [IsAuthenticated()]
     
     def get_queryset(self):
-        from django.db.models import Q
+        from django.db.models import Q, Value
+        from django.db.models.functions import Concat
         allowed = ['active', 'archived', 'frozen', 'trial'] if self.action == 'archive' else ['active', 'archived', 'frozen']
         qs = super().get_queryset().filter(status__in=allowed)
         search = self.request.query_params.get('search', '')
@@ -59,6 +60,10 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             )
             if search.isdigit():
                 q |= Q(group_memberships__group__number=int(search))
+            else:
+                q |= Q(id__in=Student.objects.annotate(
+                    full_name=Concat('first_name', Value(' '), 'last_name')
+                ).filter(full_name__icontains=search).values('id'))
             qs = qs.filter(q).distinct()
         from_date = self.request.query_params.get('from_date', '')
         to_date   = self.request.query_params.get('to_date', '')
