@@ -34,11 +34,11 @@ class TestGroupPermissions:
 
 @pytest.mark.django_db
 class TestGroupCRUD:
-    def test_create_group_auto_number(self, boss_client, course, teacher, company):
-        # GroupCreateSerializer uses `group` as FK (not group_id)
+    def test_create_group_auto_number(self, boss_client, course, teacher, room, company):
         resp = boss_client.post(GROUPS_URL, {
-            "course": str(course.id),
-            "teacher": str(teacher.id),
+            "course_id": str(course.id),
+            "teacher_id": str(teacher.id),
+            "room_id": str(room.id),
             "gender_type": "b",
         })
         assert resp.status_code == 201
@@ -48,7 +48,7 @@ class TestGroupCRUD:
         assert created.number >= 1
 
     def test_group_display_name(self, group):
-        assert group.display_name == f"{group.number}{group.gender_type}"
+        assert group.display_name == f"{group.number}{group.gender_type.upper()}"
 
     def test_retrieve_group_includes_students(self, boss_client, group):
         resp = boss_client.get(f"{GROUPS_URL}{group.id}/")

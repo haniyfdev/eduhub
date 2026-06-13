@@ -213,6 +213,10 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         if GroupStudent.objects.filter(group=group, student=student, left_at__isnull=True).exists():
             return Response({'detail': 'Student is already in this group.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        if student.status == 'pending':
+            student.status = 'active'
+            student.save(update_fields=['status'])
+
         GroupStudent.objects.create(group=group, student=student, joined_at=timezone.now(), status='trial')
 
         return Response({'status': 'student added', 'student_id': str(student.id)}, status=status.HTTP_201_CREATED)

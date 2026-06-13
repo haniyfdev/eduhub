@@ -77,6 +77,8 @@ class CompanyCardSerializer(serializers.ModelSerializer):
     is_branch = serializers.SerializerMethodField()
     active_student_count = serializers.SerializerMethodField()
     subscription_status = serializers.SerializerMethodField()
+    active_subscription = serializers.SerializerMethodField()
+    user_count = serializers.SerializerMethodField()
     branches = serializers.SerializerMethodField()
 
     class Meta:
@@ -85,6 +87,7 @@ class CompanyCardSerializer(serializers.ModelSerializer):
             'id', 'name', 'phone', 'address', 'status', 'logo',
             'branch_of', 'branch_of_name', 'is_branch',
             'active_student_count', 'subscription_status',
+            'active_subscription', 'user_count',
             'branches', 'created_at',
         )
 
@@ -98,6 +101,14 @@ class CompanyCardSerializer(serializers.ModelSerializer):
     def get_subscription_status(self, obj):
         debt = obj.subscription_debts.order_by('-created_at').first()
         return debt.status if debt else None
+
+    def get_active_subscription(self, obj):
+        debt = obj.subscription_debts.order_by('-created_at').first()
+        return debt.status != 'overdue' if debt else True
+
+    def get_user_count(self, obj):
+        from apps.users.models import User
+        return User.objects.filter(company=obj).count()
 
     def get_branches(self, obj):
         return [{'id': str(b.id), 'name': b.name} for b in obj.branches.filter(status='active')]

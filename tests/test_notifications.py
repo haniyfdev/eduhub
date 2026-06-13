@@ -62,7 +62,7 @@ class TestSmsTemplateCRUD:
         resp = boss_client.post(SMS_TEMPLATES_URL, {
             "name": "Debt Reminder",
             "body": "Dear {student_name}, please pay your debt.",
-            "type": "debt",
+            "trigger": "debt_reminder",
         })
         assert resp.status_code == 201
 
@@ -70,19 +70,19 @@ class TestSmsTemplateCRUD:
         resp = manager_client.post(SMS_TEMPLATES_URL, {
             "name": "Welcome SMS",
             "body": "Welcome {student_name}!",
-            "type": "welcome",
+            "trigger": "custom",
         })
         assert resp.status_code == 201
 
     def test_admin_blocked_from_create(self, admin_client):
         resp = admin_client.post(SMS_TEMPLATES_URL, {
-            "name": "X", "body": "Y", "type": "custom"
+            "name": "X", "body": "Y", "trigger": "custom"
         })
         assert resp.status_code == 403
 
     def test_teacher_blocked_from_create(self, teacher_client):
         resp = teacher_client.post(SMS_TEMPLATES_URL, {
-            "name": "X", "body": "Y", "type": "custom"
+            "name": "X", "body": "Y", "trigger": "custom"
         })
         assert resp.status_code == 403
 

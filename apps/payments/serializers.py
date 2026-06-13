@@ -55,12 +55,12 @@ class PaymentCreateSerializer(serializers.Serializer):
             from apps.discounts.models import Discount
             try:
                 discount = Discount.objects.get(id=data['discount_id'], company=company)
-                if discount.type == 'percent':
-                    final_amount = data['requested_amount'] * (1 - discount.value / 100)
-                else:
-                    final_amount = data['requested_amount'] - discount.value
+                final_amount = data['requested_amount'] * (1 - Decimal(discount.percent) / Decimal('100'))
             except Discount.DoesNotExist:
                 pass
+
+        if final_amount < 0:
+            raise serializers.ValidationError({'requested_amount': "Chegirma to'lov summasidan katta"})
 
         data['final_amount'] = final_amount
         data['discount'] = discount

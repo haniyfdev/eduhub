@@ -46,12 +46,42 @@ class TestDebtOperations:
         assert resp.data["id"] == str(debt.id)
 
     def test_cross_company_debt_blocked(self, boss_client, company2, db):
+        from django.utils import timezone
+        from apps.teachers.models import Teacher
+        from apps.users.models import User
+        from apps.courses.models import Course
+        from apps.rooms.models import Room
+        from apps.groups.models import Group, GroupStudent
+
+        other_user = User.objects.create_user(
+            phone=make_phone(), password="pass",
+            first_name="X", last_name="Y",
+            role="teacher", status="active", company=company2,
+        )
+        other_teacher = Teacher.objects.create(
+            user=other_user, company=company2,
+            salary_type="fixed", fixed_amount=Decimal("1000000"),
+            hired_at=date.today(), status="active",
+        )
+        other_course = Course.objects.create(
+            company=company2, name="Other Course", price=Decimal("400000"),
+            duration_months=3, duration_hours=Decimal("60"),
+        )
+        other_course.teachers.add(other_teacher)
+        other_room = Room.objects.create(company=company2, name=1, gender_type="a", status="active")
+        other_group = Group.objects.create(
+            company=company2, course=other_course, teacher=other_teacher,
+            room=other_room, number=1, gender_type="a", status="active",
+        )
         other_student = Student.objects.create(
             company=company2, first_name="X", last_name="Y",
             phone=make_phone(), status="active"
         )
+        other_gs = GroupStudent.objects.create(
+            group=other_group, student=other_student, joined_at=timezone.now()
+        )
         other_debt = Debt.objects.create(
-            company=company2, student=other_student,
+            company=company2, group_student=other_gs,
             amount=Decimal("100000"),
             due_date=date.today() + timedelta(days=30),
             status="unpaid",
@@ -83,11 +113,15 @@ class TestDebtOperations:
 class TestAssignMonthlyDebts:
     def test_assign_monthly_debts_task(self, company, student, group, group_student, course, db):
         from apps.debts.tasks import assign_monthly_debts
+        group_student.status = 'active'
+        group_student.save()
         assign_monthly_debts(str(company.id))
-        assert Debt.objects.filter(student=student, company=company).exists()
+        assert Debt.objects.filter(group_student__student=student, company=company).exists()
 
     def test_assign_monthly_debts_idempotent(self, company, student, group, group_student, course, db):
         from apps.debts.tasks import assign_monthly_debts
+        group_student.status = 'active'
+        group_student.save()
         assign_monthly_debts(str(company.id))
         assign_monthly_debts(str(company.id))
-        assert Debt.objects.filter(student=student, company=company).count() == 1
+        assert Debt.objects.filter(group_student__student=student, company=company).count() == 1

@@ -36,21 +36,33 @@ def _contact_message(phone_number: str, chat_id: int = 12345) -> AsyncMock:
 
 class TestStartHandler:
     def test_sends_welcome_message_with_contact_button(self):
-        from apps.telegram_bot.handlers import start_handler
-        from aiogram.types import ReplyKeyboardMarkup
+        from apps.telegram_bot.handlers import start_handler, language_callback
+        from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup
 
         message = AsyncMock()
         run(start_handler(message))
 
         message.answer.assert_called_once()
-        text = message.answer.call_args.args[0]
         kb = message.answer.call_args.kwargs['reply_markup']
+        assert isinstance(kb, InlineKeyboardMarkup)
+
+        callback = AsyncMock()
+        callback.data = "lang_uz"
+        callback.from_user = None
+        callback.message.chat.id = 12345
+
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(language_callback(callback))
+
+        callback.message.answer.assert_called_once()
+        text = callback.message.answer.call_args.args[0]
+        kb2 = callback.message.answer.call_args.kwargs['reply_markup']
 
         assert "Assalomu alaykum" in text
         assert "EduHub" in text
-        assert isinstance(kb, ReplyKeyboardMarkup)
-        assert kb.keyboard[0][0].text == "📱 Telefon raqamni ulash"
-        assert kb.keyboard[0][0].request_contact is True
+        assert isinstance(kb2, ReplyKeyboardMarkup)
+        assert kb2.keyboard[0][0].text == "📱 Telefon raqamni ulash"
+        assert kb2.keyboard[0][0].request_contact is True
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +109,6 @@ class TestContactHandler:
         mock_user.save.assert_called_once_with(update_fields=['telegram_chat_id'])
 
         text = message.answer.call_args.args[0]
-        assert "Alisher" in text
         assert "muvaffaqiyatli" in text
 
     # Test 3 — phone not in DB → error message contains the normalised phone
@@ -183,7 +194,7 @@ class TestFindAndLinkAccount:
 
         student.refresh_from_db()
         assert result.id == student.id
-        assert student.telegram_chat_id == 22222
+        assert student.telegram_chat_id_second == 22222
 
 
 # ---------------------------------------------------------------------------

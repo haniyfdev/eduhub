@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from utils.mixins import CompanyFilterMixin, get_active_company
+from utils.permissions import IsBossOrManager
 from .models import Announcement, AnnouncementRead, Notification, SmsTemplate
 from .serializers import AnnouncementSerializer, NotificationSerializer, SmsTemplateSerializer
 
@@ -35,6 +36,8 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_permissions(self):
+        if self.action == 'create':
+            return [IsBossOrManager()]
         return [IsAuthenticated()]
 
     def get_queryset(self):

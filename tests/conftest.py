@@ -16,6 +16,7 @@ from apps.discounts.models import Discount
 from apps.debts.models import Debt
 from apps.payments.models import Payment
 from apps.expenses.models import Expense
+from apps.rooms.models import Room
 
 
 # ---------------------------------------------------------------------------
@@ -116,23 +117,35 @@ def parent_user(db, company):
 
 @pytest.fixture
 def course(db, company, teacher):
-    return Course.objects.create(
+    course = Course.objects.create(
         company=company,
-        teacher=teacher,
         name="Python Course",
         price=Decimal("500000"),
         duration_months=3,
-        duration_hours=60,
+        duration_hours=Decimal("60"),
+        status="active",
+    )
+    course.teachers.add(teacher)
+    return course
+
+
+@pytest.fixture
+def room(db, company):
+    return Room.objects.create(
+        company=company,
+        name=1,
+        gender_type="a",
         status="active",
     )
 
 
 @pytest.fixture
-def group(db, company, course, teacher):
+def group(db, company, course, teacher, room):
     return Group.objects.create(
         company=company,
         course=course,
         teacher=teacher,
+        room=room,
         number=1,
         gender_type="a",
         status="active",
@@ -169,22 +182,22 @@ def group_student(db, group, student):
 
 
 @pytest.fixture
-def discount(db, company, course):
+def discount(db, company, student, course):
     return Discount.objects.create(
         company=company,
+        student=student,
         course=course,
-        name="10% off",
-        type="percent",
-        value=Decimal("10"),
-        status="active",
+        percent=10,
+        months=1,
+        start_month=date.today().replace(day=1),
     )
 
 
 @pytest.fixture
-def debt(db, company, student):
+def debt(db, company, group_student):
     return Debt.objects.create(
         company=company,
-        student=student,
+        group_student=group_student,
         amount=Decimal("500000"),
         due_date=date.today() + timedelta(days=30),
         status="unpaid",

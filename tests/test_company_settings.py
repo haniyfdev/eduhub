@@ -55,12 +55,12 @@ class TestCompanySettingsAPI:
         res = boss_client.patch('/api/v1/company-settings/my/', {
             'billing_type': 'per_lesson',
             'absent_policy': 'deduct',
-            'teacher_contract_break_policy': 'prorate',
+            'teacher_contract_break_policy': 'per_day',
         })
         assert res.status_code == 200
         assert res.data['billing_type'] == 'per_lesson'
         assert res.data['absent_policy'] == 'deduct'
-        assert res.data['teacher_contract_break_policy'] == 'prorate'
+        assert res.data['teacher_contract_break_policy'] == 'per_day'
 
     def test_manager_can_patch(self, db, manager_client, settings):
         res = manager_client.patch('/api/v1/company-settings/my/', {'billing_type': 'upfront'})
@@ -77,7 +77,12 @@ class TestCompanySettingsAPI:
 
     def test_superadmin_gets_400_for_my(self, db, superadmin_client):
         res = superadmin_client.get('/api/v1/company-settings/my/')
-        assert res.status_code == 400
+        assert res.status_code == 200
+        assert res.data == {
+            'billing_type': 'monthly',
+            'absent_policy': 'ignore',
+            'teacher_contract_break_policy': 'full',
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -89,14 +94,20 @@ class TestBillingTypeVariants:
         settings.billing_type = 'monthly'
         settings.save()
 
+        group_student.status = 'active'
+        group_student.save()
+
         assign_monthly_debts(str(company.id))
 
-        debt = Debt.objects.get(student=group_student.student, company=company)
+        debt = Debt.objects.get(group_student__student=group_student.student, company=company)
         assert debt.amount == course.price
 
     def test_per_lesson_billing_charges_by_attendance(self, db, company, group_student, settings, course, lesson):
         settings.billing_type = 'per_lesson'
         settings.save()
+
+        group_student.status = 'active'
+        group_student.save()
 
         # Record 10 attended lessons
         for i in range(10):
@@ -113,7 +124,7 @@ class TestBillingTypeVariants:
 
         assign_monthly_debts(str(company.id))
 
-        debt = Debt.objects.get(student=group_student.student, company=company)
+        debt = Debt.objects.get(group_student__student=group_student.student, company=company)
         expected = (course.price / Decimal('20')) * 10
         assert debt.amount == expected
 
@@ -123,10 +134,13 @@ class TestBillingTypeVariants:
         settings.billing_type = 'upfront'
         settings.save()
 
+        group_student.status = 'active'
+        group_student.save()
+
         # enrolled within last 30 days (fixture joins today)
         assign_monthly_debts(str(company.id))
 
-        debt = Debt.objects.get(student=group_student.student, company=company)
+        debt = Debt.objects.get(group_student__student=group_student.student, company=company)
         assert debt.amount == course.price * course.duration_months
 
     def test_upfront_billing_skips_existing_enrollment(
@@ -145,7 +159,7 @@ class TestBillingTypeVariants:
         assign_monthly_debts(str(company.id))
 
         # Should NOT create any debt since enrollment is outside the 30-day window
-        assert not Debt.objects.filter(student=student, company=company).exists()
+        assert not Debt.objects.filter(group_student__student=student, company=company).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +246,7 @@ class TestTeacherContractBreakPolicy:
 
         month = date.today().replace(day=1)
         teacher = self._make_archived_teacher(company, teacher_user, month)
-        salary = calculate_teacher_salary(teacher, month)
+        salary = calculate_teacher_salary(teacher, month)[0]
 
         assert salary.total_amount == Decimal('2000000')
 
@@ -242,7 +256,7 @@ class TestTeacherContractBreakPolicy:
 
         month = date.today().replace(day=1)
         teacher = self._make_archived_teacher(company, teacher_user, month)
-        salary = calculate_teacher_salary(teacher, month)
+        salary = calculate_teacher_salary(teacher, month)[0]
 
         # days worked = 15 - 1 = 14 days (from month start to archived_at day)
         days_worked = (teacher.archived_at.date() - month).days
@@ -255,7 +269,7 @@ class TestTeacherContractBreakPolicy:
 
         month = date.today().replace(day=1)
         teacher = self._make_archived_teacher(company, teacher_user, month)
-        salary = calculate_teacher_salary(teacher, month)
+        salary = calculate_teacher_salary(teacher, month)[0]
 
         assert salary.total_amount == Decimal('0')
         assert salary.base_amount == Decimal('0')
@@ -265,7 +279,7 @@ class TestTeacherContractBreakPolicy:
         settings.save()
 
         month = date.today().replace(day=1)
-        salary = calculate_teacher_salary(teacher, month)
+        salary = calculate_teacher_salary(teacher, month)[0]
 
         # Active teacher should always be paid regardless of policy
         assert salary.total_amount == Decimal('2000000')

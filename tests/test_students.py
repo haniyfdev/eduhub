@@ -11,6 +11,7 @@ def student_data():
         "first_name": "John",
         "last_name": "Doe",
         "phone": make_phone(),
+        "birth_date": "2010-01-01",
         "status": "pending",
     }
 
@@ -58,7 +59,7 @@ class TestStudentCRUD:
         assert student.first_name == "Updated"
 
     def test_archive_student(self, boss_client, student):
-        resp = boss_client.post(f"{STUDENTS_URL}{student.id}/archive/")
+        resp = boss_client.post(f"{STUDENTS_URL}{student.id}/archive/", {"reason": "graduated"})
         assert resp.status_code == 200
         student.refresh_from_db()
         assert student.status == "archived"

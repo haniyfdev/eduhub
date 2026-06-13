@@ -16,13 +16,14 @@ class TestCoursePermissions:
         resp = manager_client.get(COURSES_URL)
         assert resp.status_code == 200
 
-    def test_admin_blocked_from_create(self, admin_client, teacher):
+    def test_admin_can_create(self, admin_client, teacher):
         resp = admin_client.post(COURSES_URL, {
             "name": "Go Course", "price": "600000.00",
             "duration_months": 4, "duration_hours": 80,
             "teacher_id": str(teacher.id),
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 201
+        assert Course.objects.filter(name="Go Course").exists()
 
     def test_teacher_can_read(self, teacher_client):
         resp = teacher_client.get(COURSES_URL)
@@ -89,9 +90,10 @@ class TestCourseCRUD:
             hired_at=date.today(), status="active",
         )
         other_course = Course.objects.create(
-            company=company2, teacher=other_teacher,
+            company=company2,
             name="Other Course", price=Decimal("400000"),
-            duration_months=3, duration_hours=60,
+            duration_months=3, duration_hours=Decimal("60"),
         )
+        other_course.teachers.add(other_teacher)
         resp = boss_client.get(f"{COURSES_URL}{other_course.id}/")
         assert resp.status_code in (403, 404)

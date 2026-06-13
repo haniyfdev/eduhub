@@ -12,6 +12,7 @@ from .serializers import ExpenseSerializer, ExpenseCreateSerializer
 
 class ExpenseViewSet(CompanyFilterMixin, mixins.CreateModelMixin,
                      mixins.UpdateModelMixin, mixins.ListModelMixin,
+                     mixins.RetrieveModelMixin,
                      viewsets.GenericViewSet):
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 

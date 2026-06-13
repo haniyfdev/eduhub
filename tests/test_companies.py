@@ -11,13 +11,17 @@ class TestCompanyPermissions:
         resp = superadmin_client.get(COMPANIES_URL)
         assert resp.status_code == 200
 
-    def test_boss_cannot_access(self, boss_client):
+    def test_boss_can_access_own_company(self, boss_client, boss):
         resp = boss_client.get(COMPANIES_URL)
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        ids = [item["id"] for item in resp.data["results"]]
+        assert str(boss.company_id) in ids
 
-    def test_manager_cannot_access(self, manager_client):
+    def test_manager_can_access_own_company(self, manager_client, manager):
         resp = manager_client.get(COMPANIES_URL)
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        ids = [item["id"] for item in resp.data["results"]]
+        assert str(manager.company_id) in ids
 
     def test_unauthenticated_blocked(self, api_client):
         resp = api_client.get(COMPANIES_URL)

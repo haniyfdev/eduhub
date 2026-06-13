@@ -18,6 +18,25 @@ from .models import Expense
 
 def _parse_date_range(request):
     today = date.today()
+
+    month_param = request.query_params.get('month')
+    if month_param:
+        try:
+            year, mon = month_param.split('-')
+            from_date = date(int(year), int(mon), 1)
+            to_date = (from_date + relativedelta(months=1)) - timedelta(days=1)
+            return from_date, to_date
+        except (ValueError, AttributeError):
+            pass
+
+    year_param = request.query_params.get('year')
+    if year_param:
+        try:
+            y = int(year_param)
+            return date(y, 1, 1), date(y, 12, 31)
+        except ValueError:
+            pass
+
     default_from = today.replace(day=1)
     from_str = request.query_params.get('from_date', str(default_from))
     to_str   = request.query_params.get('to_date',   str(today))
@@ -33,7 +52,7 @@ def _parse_date_range(request):
 
 
 def _salary_totals(cf):
-    """Return combined maoshlar total — all paid_amount > 0 regardless of paid_at date."""
+    """Return (teacher_paid, staff_paid) — all paid_amount > 0 regardless of paid_at date."""
     teacher_paid = TeacherSalary.objects.filter(
         **cf,
         paid_amount__gt=0,
@@ -44,7 +63,7 @@ def _salary_totals(cf):
         paid_amount__gt=0,
     ).aggregate(total=Sum('paid_amount'))['total'] or Decimal('0')
 
-    return teacher_paid + staff_paid
+    return teacher_paid, staff_paid
 
 
 def _manual_totals(manual_qs):
@@ -65,6 +84,9 @@ class ProfitLossView(APIView):
     permission_classes = [IsSuperAdminOrBossOrManager]
 
     def get(self, request):
+        if not request.query_params.get('month') and not request.query_params.get('year'):
+            return Response({'error': "'month' or 'year' parameter required"}, status=400)
+
         try:
             from_date, to_date = _parse_date_range(request)
             company_id = None if request.user.role == 'superadmin' else resolve_company_id(request)
@@ -74,7 +96,7 @@ class ProfitLossView(APIView):
                 **cf, paid_at__date__gte=from_date, paid_at__date__lte=to_date
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-            maoshlar = _salary_totals(cf)
+            teacher_paid, staff_paid = _salary_totals(cf)
 
             # Manual expenses only (exclude auto-mirrored salary rows)
             manual_qs = Expense.objects.filter(
@@ -84,29 +106,18 @@ class ProfitLossView(APIView):
             ).exclude(category__in=['teacher_salary', 'staff_salary'])
 
             cats = _manual_totals(manual_qs)
-            total_expense = maoshlar + sum(cats.values())
-            net_profit    = total_income - total_expense
-
-            # Build breakdown list for the expenses table
-            breakdown = []
-            if maoshlar > 0:
-                breakdown.append({
-                    'id': None,
-                    'category': 'maoshlar',
-                    'amount': maoshlar,
-                    'date': str(from_date),
-                    'note': 'Maoshlar',
-                    'source': 'auto',
-                })
-            for exp in manual_qs.order_by('-expense_date'):
-                breakdown.append({
-                    'id': str(exp.id),
-                    'category': exp.category,
-                    'amount': exp.amount,
-                    'date': str(exp.expense_date),
-                    'note': exp.description,
-                    'source': exp.source,
-                })
+            breakdown = {
+                'rent':           cats['rent'],
+                'utility':        cats['utility'],
+                'tax':            cats['tax'],
+                'fine':           cats['fine'],
+                'discount':       cats['discount'],
+                'teacher_salary': teacher_paid,
+                'staff_salary':   staff_paid,
+                'other':          cats['other'],
+            }
+            total_expense = sum(breakdown.values())
+            profit        = total_income - total_expense
 
             # Stats (not date-filtered — current state)
             from apps.leads.models   import Lead
@@ -129,19 +140,12 @@ class ProfitLossView(APIView):
                 'to_date':   str(to_date),
                 'income':   {'total': total_income},
                 'expenses': {
-                    'total':    total_expense,
-                    'maoshlar': maoshlar,
-                    'rent':     cats['rent'],
-                    'utility':  cats['utility'],
-                    'tax':      cats['tax'],
-                    'fine':     cats['fine'],
-                    'discount': cats['discount'],
-                    'other':    cats['other'],
+                    'total':     total_expense,
                     'breakdown': breakdown,
                 },
-                'net_profit':         net_profit,
-                'net_profit_percent': float(net_profit   / total_income * 100) if total_income else 0,
-                'expense_percent':    float(total_expense / total_income * 100) if total_income else 0,
+                'profit':         profit,
+                'margin':         float(profit / total_income * 100) if total_income else 0,
+                'expense_percent': float(total_expense / total_income * 100) if total_income else 0,
                 'stats': stats,
             })
 

@@ -41,12 +41,47 @@ def calculate_teacher_salary(teacher, month):
     from apps.debts.models import Debt
     from django.db.models import Sum
 
-    if teacher.status in ('frozen', 'archived'):
+    if teacher.status == 'frozen':
         return []
 
     month = month.replace(day=1)
     prev_month = (month - relativedelta(months=1)).replace(day=1)
     kpi_amount = teacher.kpi_bonus or Decimal('0')
+
+    # ── ARCHIVED: apply teacher_contract_break_policy (full/prorate/none) ───
+    if teacher.status == 'archived':
+        if teacher.salary_type != 'fixed':
+            return []
+
+        from apps.companies.models import CompanySettings
+        cs = CompanySettings.objects.filter(company=teacher.company).first()
+        policy = cs.teacher_contract_break_policy if cs else 'full'
+
+        base_amount = teacher.fixed_amount or Decimal('0')
+        if policy == 'none':
+            base_amount = Decimal('0')
+        elif policy != 'full' and teacher.archived_at:
+            days_worked = (teacher.archived_at.date() - month).days
+            base_amount = base_amount * (Decimal(days_worked) / Decimal('30'))
+
+        calculated_amount = base_amount + kpi_amount
+
+        salary, _ = TeacherSalary.objects.update_or_create(
+            teacher=teacher,
+            company=teacher.company,
+            month=month,
+            group=None,
+            defaults={
+                'base_amount':       base_amount,
+                'kpi_amount':        kpi_amount,
+                'total_amount':      calculated_amount,
+                'calculated_amount': calculated_amount,
+                'carry_over':        Decimal('0'),
+                'due_date':          (month + relativedelta(months=1)),
+            },
+        )
+        _reconcile(salary)
+        return [salary]
 
     # ── FIXED: ONE salary record, no group, no carry_over ───────────────────
     # Each month is independent — same as staff fixed salary
@@ -90,16 +125,13 @@ def calculate_teacher_salary(teacher, month):
             group=group,
         ).first()
 
-        # Sum of debts owed by students in this group for the billing month.
-        # Debt.due_date is rolled forward ~1 month per cycle (see
-        # apps/debts/scheduler.py), so a debt billed for `month` carries a
-        # due_date in the following month.
-        next_month = month + relativedelta(months=1)
+        # Sum of debts owed by students in this group whose due_date falls
+        # within the billing month being calculated.
         agg = Debt.objects.filter(
             group_student__group=group,
             company=teacher.company,
-            due_date__year=next_month.year,
-            due_date__month=next_month.month,
+            due_date__year=month.year,
+            due_date__month=month.month,
         ).aggregate(total=Sum('amount'))
         group_debt_sum = Decimal(str(agg['total'] or 0))
 

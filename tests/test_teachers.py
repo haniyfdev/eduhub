@@ -29,9 +29,17 @@ class TestTeacherPermissions:
         resp = manager_client.get(TEACHERS_URL)
         assert resp.status_code == 200
 
-    def test_admin_cannot_create(self, admin_client, teacher_user, company):
-        resp = admin_client.post(TEACHERS_URL, teacher_payload(teacher_user.id, company.id))
-        assert resp.status_code == 403
+    def test_admin_can_create(self, admin_client, company):
+        resp = admin_client.post(TEACHERS_URL, {
+            "phone": make_phone(),
+            "first_name": "New",
+            "last_name": "Teacher",
+            "password": "pass1234",
+            "salary_type": "fixed",
+            "fixed_amount": "1500000.00",
+        })
+        assert resp.status_code == 201
+        assert Teacher.objects.filter(user__first_name="New", user__last_name="Teacher").exists()
 
     def test_teacher_cannot_create(self, teacher_client, teacher_user, company):
         resp = teacher_client.post(TEACHERS_URL, teacher_payload(teacher_user.id, company.id))

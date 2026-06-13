@@ -34,7 +34,7 @@ class DashboardSummaryView(APIView):
         )
 
         return Response({
-            'total_students': active_students.count(),
+            'total_students': students.count(),
             'active_students': active_students.count(),
             'pending_students': students.filter(status='pending').count(),
             'trial_students': students.filter(status='trial').count(),
@@ -115,7 +115,7 @@ class DashboardTeacherStatsView(APIView):
                 group__teacher=teacher, group__status='active', left_at__isnull=True
             ).count()
             monthly_revenue = Payment.objects.filter(
-                company=company, group__teacher=teacher,
+                company=company, group_student__group__teacher=teacher,
                 paid_at__year=today.year, paid_at__month=today.month,
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
             result.append({
