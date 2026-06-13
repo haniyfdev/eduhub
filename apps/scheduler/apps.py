@@ -15,8 +15,27 @@ class SchedulerConfig(AppConfig):
         logger.error(f"RUN_MAIN={os.environ.get('RUN_MAIN')}")
         logger.error(f"SETTINGS={os.environ.get('DJANGO_SETTINGS_MODULE')}")
 
-        # Prevent double-start in dev (reloader) and multi-worker envs
-        if os.environ.get('RUN_MAIN') == 'true' or \
-                os.environ.get('DJANGO_SETTINGS_MODULE', '').endswith('production'):
+        if os.environ.get('DJANGO_SETTINGS_MODULE', '').endswith('production'):
+            # Multiple gunicorn workers all call ready() on boot. Only the
+            # worker that grabs this lock starts the scheduler; the rest
+            # back off so jobs aren't scheduled multiple times.
+            import fcntl
+
+            lock_file = open('/tmp/apscheduler.lock', 'w')
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except IOError:
+                logger.error("APScheduler: another instance already running, skipping.")
+                return
+
+            # Keep the descriptor referenced for the process lifetime so the
+            # lock isn't released until this worker exits.
+            self._scheduler_lock = lock_file
+
+            from .jobs import start_scheduler
+            start_scheduler()
+        elif os.environ.get('RUN_MAIN') == 'true':
+            # Dev server with the autoreloader: only the reloaded child
+            # process sets RUN_MAIN, preventing a double start there too.
             from .jobs import start_scheduler
             start_scheduler()

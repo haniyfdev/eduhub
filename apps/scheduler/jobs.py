@@ -181,7 +181,14 @@ def start_scheduler():
     from django_apscheduler.jobstores import DjangoJobStore
 
     scheduler = BackgroundScheduler(timezone='Asia/Tashkent')
-    scheduler.add_jobstore(DjangoJobStore(), 'default')
+
+    try:
+        scheduler.add_jobstore(DjangoJobStore(), 'default')
+    except Exception:
+        logger.exception(
+            "APScheduler: failed to initialize DjangoJobStore, "
+            "falling back to in-memory jobstore"
+        )
 
     scheduler.add_job(
         assign_monthly_student_debts,
