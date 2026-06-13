@@ -337,6 +337,18 @@ class SuperadminDebtPayView(APIView):
         return Response(CompanySubscriptionDebtSerializer(debt).data)
 
 
+class SuperadminDebtDetailView(APIView):
+    """PATCH /api/superadmin/debts/{id}/"""
+    permission_classes = [IsSuperAdmin]
+
+    def patch(self, request, pk):
+        debt = get_object_or_404(CompanySubscriptionDebt, pk=pk)
+        serializer = CompanySubscriptionDebtSerializer(debt, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
 class SuperadminPaymentListView(APIView):
     """GET /api/superadmin/payments/"""
     permission_classes = [IsSuperAdmin]

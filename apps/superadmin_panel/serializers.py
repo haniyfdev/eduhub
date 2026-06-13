@@ -53,6 +53,15 @@ class CompanySubscriptionDebtSerializer(serializers.ModelSerializer):
         paid = total or Decimal('0')
         return obj.amount - paid
 
+    def validate_amount(self, value):
+        from decimal import Decimal
+        if value < Decimal('10000'):
+            raise serializers.ValidationError("Qarz miqdori 10,000 so'mdan kam bo'lishi mumkin emas.")
+        plan = SubscriptionPlan.objects.first()
+        if plan and value > plan.price:
+            raise serializers.ValidationError(f"Qarz miqdori {plan.price} so'mdan oshmasligi mumkin emas.")
+        return value
+
 
 class CompanySubscriptionPaymentSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.name', read_only=True)
