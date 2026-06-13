@@ -16,6 +16,7 @@ def assign_monthly_student_debts():
     from apps.groups.models import GroupStudent
 
     logger.info("assign_monthly_student_debts: started")
+    logger.error("JOB START: assign_monthly_student_debts")
     today = date.today()
     created = 0
     updated = 0
@@ -89,6 +90,7 @@ def assign_monthly_student_debts():
             "assign_monthly_student_debts: completed created=%d updated=%d skipped=%d",
             created, updated, skipped,
         )
+        logger.error("JOB DONE: assign_monthly_student_debts")
     except Exception:
         logger.exception("assign_monthly_student_debts: failed")
 
@@ -98,10 +100,12 @@ def mark_overdue_student_debts():
     from apps.debts.models import Debt
 
     logger.info("mark_overdue_student_debts: started")
+    logger.error("JOB START: mark_overdue_student_debts")
     try:
         today = date.today()
         updated = Debt.objects.filter(status='unpaid', due_date__lt=today).update(status='overdue')
         logger.info("mark_overdue_student_debts: completed updated=%d", updated)
+        logger.error("JOB DONE: mark_overdue_student_debts")
     except Exception:
         logger.exception("mark_overdue_student_debts: failed")
 
@@ -111,6 +115,7 @@ def renew_subscription_debts():
     from apps.superadmin_panel.models import CompanySubscriptionDebt, SubscriptionPlan
 
     logger.info("renew_subscription_debts: started")
+    logger.error("JOB START: renew_subscription_debts")
     created = 0
 
     try:
@@ -118,6 +123,7 @@ def renew_subscription_debts():
         plan = SubscriptionPlan.objects.first()
         if plan is None:
             logger.warning("renew_subscription_debts: no SubscriptionPlan configured, skipping")
+            logger.error("JOB DONE: renew_subscription_debts")
             return
 
         paid_debts = CompanySubscriptionDebt.objects.filter(status='paid', period_end__lte=today)
@@ -146,6 +152,7 @@ def renew_subscription_debts():
                 logger.exception("renew_subscription_debts: failed for company %s", debt.company_id)
 
         logger.info("renew_subscription_debts: completed created=%d", created)
+        logger.error("JOB DONE: renew_subscription_debts")
     except Exception:
         logger.exception("renew_subscription_debts: failed")
 
@@ -155,6 +162,7 @@ def mark_overdue_subscription_debts():
     from apps.superadmin_panel.models import CompanySubscriptionDebt
 
     logger.info("mark_overdue_subscription_debts: started")
+    logger.error("JOB START: mark_overdue_subscription_debts")
     try:
         today = date.today()
         updated = CompanySubscriptionDebt.objects.filter(
@@ -162,6 +170,7 @@ def mark_overdue_subscription_debts():
             period_end__lt=today,
         ).update(status='overdue')
         logger.info("mark_overdue_subscription_debts: completed updated=%d", updated)
+        logger.error("JOB DONE: mark_overdue_subscription_debts")
     except Exception:
         logger.exception("mark_overdue_subscription_debts: failed")
 
@@ -204,8 +213,8 @@ def start_scheduler():
     )
 
     try:
-        logger.info("Starting APScheduler...")
+        logger.error("APScheduler: attempting to start...")
         scheduler.start()
-        logger.info("APScheduler started successfully.")
+        logger.error("APScheduler: started successfully.")
     except Exception as e:
         logger.error(f"APScheduler failed to start: {e}")
