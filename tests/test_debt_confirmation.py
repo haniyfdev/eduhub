@@ -45,10 +45,12 @@ class TestDebtConfirmation:
         assert first_confirmed_at is not None
 
         resp2 = boss_client.patch(f"{DEBTS_URL}{debt.id}/", {"amount": "300000"})
-        assert resp2.status_code == 200
+        assert resp2.status_code == 400
+        assert resp2.data == {'amount': 'Qarz miqdori allaqachon tasdiqlangan'}
+
         debt.refresh_from_db()
-        assert debt.amount == Decimal("300000")
-        assert debt.confirmed_at >= first_confirmed_at
+        assert debt.amount == Decimal("400000")
+        assert debt.confirmed_at == first_confirmed_at
 
     def test_admin_can_confirm_debt(self, admin_client, debt):
         resp = admin_client.patch(f"{DEBTS_URL}{debt.id}/", {"amount": "100000"})
