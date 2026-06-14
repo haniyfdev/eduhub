@@ -58,6 +58,8 @@ class DebtUpdateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         if 'amount' in validated_data:
+            if instance.confirmed_at is not None:
+                raise serializers.ValidationError({'amount': 'Qarz miqdori allaqachon tasdiqlangan'})
             from django.utils import timezone
             validated_data['confirmed_at'] = timezone.now()
         return super().update(instance, validated_data)

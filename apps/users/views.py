@@ -1,4 +1,5 @@
 from django.core import signing
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -144,6 +145,13 @@ class SelectCompanyView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        used_key = f"temp_token_used:{temp_token}"
+        if cache.get(used_key):
+            return Response(
+                {'error': 'Selection token has already been used. Please log in again.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         user_ids = payload.get('user_ids', [])
         try:
             user = User.objects.get(
@@ -162,6 +170,8 @@ class SelectCompanyView(APIView):
                 {'error': 'This account has been deactivated.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        cache.set(used_key, True, timeout=_COMPANY_SELECT_MAX_AGE)
 
         refresh = RefreshToken.for_user(user)
         return Response({
@@ -226,9 +236,11 @@ class ForgotPasswordView(APIView):
                     status=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
 
-            # If no user exists, return success silently (prevent phone enumeration)
             if not User.objects.filter(phone=phone, is_active=True).exists():
-                return Response({'success': True, 'expires_in': 100})
+                return Response(
+                    {'error': 'Telefon raqam topilmadi'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
             try:
                 has_telegram = (

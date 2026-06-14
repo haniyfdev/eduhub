@@ -35,14 +35,14 @@ class TestDebtConfirmation:
         first_confirmed_at = debt.confirmed_at
         assert first_confirmed_at is not None
 
-        # Current DebtUpdateSerializer has no lock once confirmed_at is set --
-        # a second amount change is accepted and re-stamps confirmed_at.
-        # See final report.
+        # Once confirmed_at is set, a second amount change is rejected.
         second = boss_client.patch(f"{DEBTS_URL}{debt.id}/", {"amount": "650000"})
-        assert second.status_code == 200
+        assert second.status_code == 400
+        assert second.data["amount"] == "Qarz miqdori allaqachon tasdiqlangan"
+
         debt.refresh_from_db()
-        assert debt.amount == Decimal("650000")
-        assert debt.confirmed_at >= first_confirmed_at
+        assert debt.amount == Decimal("600000")
+        assert debt.confirmed_at == first_confirmed_at
 
     def test_confirmed_amount_shown_in_list(self, boss_client, debt):
         boss_client.patch(f"{DEBTS_URL}{debt.id}/", {"amount": "600000"})

@@ -117,14 +117,13 @@ class TestMultiCompanyLoginExtended:
         })
         assert first.status_code == 200
 
-        # NOTE: temp_token is a stateless signed token (django.core.signing) with
-        # no server-side single-use tracking, so it remains valid for repeated
-        # use within its 5-minute window. See final report.
+        # temp_token is invalidated after its first successful use.
         second = client.post(SELECT_COMPANY_URL, {
             "temp_token": temp_token,
             "company_id": str(company2.id),
         })
-        assert second.status_code == 200
+        assert second.status_code == 400
+        assert "used" in second.data["error"].lower()
 
     def test_archived_company_not_in_login_list(self, superadmin_client, company, company2, db):
         phone, user1, user2 = _create_shared_phone_users(company, company2)

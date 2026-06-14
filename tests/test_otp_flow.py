@@ -100,9 +100,7 @@ class TestOtpForgotPasswordFlow:
         assert cache.get(f"otp:{telegram_user.phone}") is None
 
     def test_unknown_phone_returns_404(self, api_client, db, fake_redis):
-        # ForgotPasswordView intentionally returns 200 (anti phone-enumeration)
-        # for an unknown phone rather than 404 -- see final report.
         resp = api_client.post(FORGOT_PASSWORD_URL, {'phone': make_phone()})
 
-        assert resp.status_code == 200
-        assert resp.data == {'success': True, 'expires_in': 100}
+        assert resp.status_code == 404
+        assert resp.data == {'error': 'Telefon raqam topilmadi'}
