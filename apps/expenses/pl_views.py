@@ -84,8 +84,10 @@ class ProfitLossView(APIView):
     permission_classes = [IsSuperAdminOrBossOrManager]
 
     def get(self, request):
-        if not request.query_params.get('month') and not request.query_params.get('year'):
-            return Response({'error': "'month' or 'year' parameter required"}, status=400)
+        if (not request.query_params.get('month')
+                and not request.query_params.get('year')
+                and not request.query_params.get('from_date')):
+            return Response({'error': "'month', 'year', or 'from_date' parameter required"}, status=400)
 
         try:
             from_date, to_date = _parse_date_range(request)
