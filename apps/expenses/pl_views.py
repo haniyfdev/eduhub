@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from dateutil.relativedelta import relativedelta
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -112,8 +112,32 @@ class ProfitLossView(APIView):
             total_expense = maoshlar + sum(cats.values())
             profit        = total_income - total_expense
 
-            # Individual expense rows for the table (all categories, date-filtered)
-            expense_rows = [
+            # Expense rows for the table — salary categories aggregated into one row each
+            all_exp_qs = Expense.objects.filter(
+                **cf,
+                expense_date__gte=from_date,
+                expense_date__lte=to_date,
+            )
+
+            expense_rows = []
+            for cat, note in [
+                ('teacher_salary', "Barcha o'qituvchilar maoshi"),
+                ('staff_salary',   "Barcha xodimlar maoshi"),
+            ]:
+                agg = all_exp_qs.filter(category=cat).aggregate(
+                    total=Sum('amount'), latest=Max('expense_date')
+                )
+                if agg['total']:
+                    expense_rows.append({
+                        'id':       None,
+                        'category': cat,
+                        'amount':   float(agg['total']),
+                        'date':     str(agg['latest']),
+                        'note':     note,
+                        'source':   'auto',
+                    })
+
+            expense_rows += [
                 {
                     'id':       str(e.id),
                     'category': e.category,
@@ -122,10 +146,8 @@ class ProfitLossView(APIView):
                     'note':     e.description or None,
                     'source':   e.source,
                 }
-                for e in Expense.objects.filter(
-                    **cf,
-                    expense_date__gte=from_date,
-                    expense_date__lte=to_date,
+                for e in all_exp_qs.exclude(
+                    category__in=['teacher_salary', 'staff_salary']
                 ).order_by('-expense_date', '-created_at')
             ]
 
