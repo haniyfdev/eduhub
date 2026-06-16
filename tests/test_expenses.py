@@ -9,7 +9,7 @@ PL_URL = "/api/v1/profit-loss/"
 PL_HISTORY_URL = "/api/v1/profit-loss/history/"
 PL_TEACHERS_URL = "/api/v1/profit-loss/teachers/"
 
-ALL_EXPENSE_CATEGORIES = ['rent', 'utility', 'tax', 'fine', 'discount', 'teacher_salary', 'staff_salary', 'other']
+ALL_EXPENSE_CATEGORIES = ['rent', 'utility', 'tax', 'fine', 'discount', 'maoshlar', 'other']
 
 
 @pytest.mark.django_db
@@ -87,9 +87,12 @@ class TestProfitLoss:
         month_str = f"{today.year}-{today.month:02d}"
         resp = boss_client.get(f"{PL_URL}?month={month_str}")
         assert resp.status_code == 200
-        breakdown = resp.data["expenses"]["breakdown"]
+        expenses = resp.data["expenses"]
+        # Category totals are flat on expenses (teacher+staff salary combined as maoshlar)
         for cat in ALL_EXPENSE_CATEGORIES:
-            assert cat in breakdown, f"Category '{cat}' missing from P&L breakdown"
+            assert cat in expenses, f"Category '{cat}' missing from P&L expenses"
+        # breakdown is now a list of individual expense records (not a dict)
+        assert isinstance(expenses["breakdown"], list)
 
     def test_pl_by_year_works(self, boss_client):
         today = date.today()
