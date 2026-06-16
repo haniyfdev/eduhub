@@ -106,18 +106,26 @@ class ProfitLossView(APIView):
             ).exclude(category__in=['teacher_salary', 'staff_salary'])
 
             cats = _manual_totals(manual_qs)
-            breakdown = {
-                'rent':           cats['rent'],
-                'utility':        cats['utility'],
-                'tax':            cats['tax'],
-                'fine':           cats['fine'],
-                'discount':       cats['discount'],
-                'teacher_salary': teacher_paid,
-                'staff_salary':   staff_paid,
-                'other':          cats['other'],
-            }
-            total_expense = sum(breakdown.values())
+            maoshlar = teacher_paid + staff_paid
+            total_expense = maoshlar + sum(cats.values())
             profit        = total_income - total_expense
+
+            # Individual expense rows for the table (all categories, date-filtered)
+            expense_rows = [
+                {
+                    'id':       str(e.id),
+                    'category': e.category,
+                    'amount':   float(e.amount),
+                    'date':     str(e.expense_date),
+                    'note':     e.description or None,
+                    'source':   e.source,
+                }
+                for e in Expense.objects.filter(
+                    **cf,
+                    expense_date__gte=from_date,
+                    expense_date__lte=to_date,
+                ).order_by('-expense_date', '-created_at')
+            ]
 
             # Stats (not date-filtered — current state)
             from apps.leads.models   import Lead
@@ -135,18 +143,32 @@ class ProfitLossView(APIView):
                 'total_debt_amount': debts_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0'),
             }
 
+            net_profit_pct = float(profit / total_income * 100) if total_income else 0
+
             return Response({
                 'from_date': str(from_date),
                 'to_date':   str(to_date),
                 'income':   {'total': total_income},
                 'expenses': {
-                    'total':     total_expense,
-                    'breakdown': breakdown,
+                    'total':    total_expense,
+                    # Flat totals — read directly by the frontend pie chart
+                    'maoshlar': maoshlar,
+                    'rent':     cats['rent'],
+                    'utility':  cats['utility'],
+                    'tax':      cats['tax'],
+                    'fine':     cats['fine'],
+                    'discount': cats['discount'],
+                    'other':    cats['other'],
+                    # Array of individual expense records — for the expenses table
+                    'breakdown': expense_rows,
                 },
-                'profit':         profit,
-                'margin':         float(profit / total_income * 100) if total_income else 0,
-                'expense_percent': float(total_expense / total_income * 100) if total_income else 0,
-                'stats': stats,
+                'net_profit':         profit,
+                'net_profit_percent': net_profit_pct,
+                'expense_percent':    float(total_expense / total_income * 100) if total_income else 0,
+                # Legacy keys kept for any other consumers
+                'profit': profit,
+                'margin': net_profit_pct,
+                'stats':  stats,
             })
 
         except Exception as e:
