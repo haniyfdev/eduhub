@@ -28,6 +28,14 @@ class StaffViewSet(CompanyFilterMixin, viewsets.ModelViewSet):
         status_param = self.request.query_params.get('status')
         if status_param:
             qs = qs.filter(status=status_param)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search) |
+                Q(user__phone__icontains=search)
+            )
         return qs
 
     def get_permissions(self):
