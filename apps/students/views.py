@@ -65,6 +65,12 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
                     full_name=Concat('first_name', Value(' '), 'last_name')
                 ).filter(full_name__icontains=search).values('id'))
             qs = qs.filter(q).distinct()
+        course_id = self.request.query_params.get('course', '')
+        if course_id:
+            qs = qs.filter(
+                group_memberships__group__course_id=course_id,
+                group_memberships__left_at__isnull=True,
+            ).distinct()
         from_date = self.request.query_params.get('from_date', '')
         to_date   = self.request.query_params.get('to_date', '')
         if from_date:
