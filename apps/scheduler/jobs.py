@@ -60,11 +60,13 @@ def assign_monthly_student_debts():
                     debt = Debt.objects.select_for_update().filter(group_student=gs).order_by('-due_date').first()
 
                     if debt is None:
+                        first_due = gs.joined_at.date() + timedelta(days=30)
                         Debt.objects.create(
                             company=gs.group.company,
                             group_student=gs,
                             amount=final_amount,
-                            due_date=gs.joined_at.date() + timedelta(days=30),
+                            due_date=first_due,
+                            billing_month=first_due.replace(day=1),
                             status='unpaid',
                             discount=discount,
                             discount_amount=discount_amount,
@@ -78,12 +80,16 @@ def assign_monthly_student_debts():
                         skipped += 1
                         continue
 
+                    # Capture billing_month for the cycle being closed before rolling forward.
+                    billing_month = debt.due_date.replace(day=1)
+                    new_due = debt.due_date + timedelta(days=30)
                     debt.amount = final_amount
-                    debt.due_date = debt.due_date + timedelta(days=30)
+                    debt.due_date = new_due
+                    debt.billing_month = billing_month
                     debt.status = 'unpaid'
                     debt.discount = discount
                     debt.discount_amount = discount_amount
-                    debt.save(update_fields=['amount', 'due_date', 'status', 'discount', 'discount_amount'])
+                    debt.save(update_fields=['amount', 'due_date', 'billing_month', 'status', 'discount', 'discount_amount'])
                     updated += 1
             except Exception:
                 logger.exception("assign_monthly_student_debts: failed for group_student %s", gs.id)

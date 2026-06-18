@@ -125,13 +125,17 @@ def calculate_teacher_salary(teacher, month):
             group=group,
         ).first()
 
-        # Sum of debts owed by students in this group whose due_date falls
-        # within the billing month being calculated.
+        # Sum of debts for the billing month.  billing_month is set by the
+        # scheduler when a debt cycle closes (before due_date rolls forward),
+        # so it stays correct even after the debt has been rolled to the next
+        # month.  Fall back to due_date filtering for old debts without it.
+        from django.db.models import Q
         agg = Debt.objects.filter(
             group_student__group=group,
             company=teacher.company,
-            due_date__year=month.year,
-            due_date__month=month.month,
+        ).filter(
+            Q(billing_month__year=month.year, billing_month__month=month.month) |
+            Q(billing_month__isnull=True, due_date__year=month.year, due_date__month=month.month)
         ).aggregate(total=Sum('amount'))
         group_debt_sum = Decimal(str(agg['total'] or 0))
 

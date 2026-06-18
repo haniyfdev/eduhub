@@ -81,7 +81,7 @@ def make_gs(group, company):
     return GroupStudent.objects.create(group=group, student=student, joined_at=timezone.now())
 
 
-def make_debt(company, gs, amount, month=None):
+def make_debt(company, gs, amount, month=None, billing_month=None):
     """Create a debt whose due_date falls in the given billing month."""
     if month is None:
         month = THIS_MONTH
@@ -91,6 +91,7 @@ def make_debt(company, gs, amount, month=None):
         group_student=gs,
         amount=Decimal(str(amount)),
         due_date=due,
+        billing_month=billing_month,
         status="unpaid",
     )
 
@@ -417,3 +418,53 @@ class TestMarkPaid:
         assert resp.status_code == 200
         salary.refresh_from_db()
         assert salary.paid_at is not None
+
+
+# ---------------------------------------------------------------------------
+# Billing-month rollover regression
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestBillingMonthRollover:
+    """Debts rolled by the scheduler get a billing_month set to the original
+    billing cycle (before rolling).  Salary for that earlier month must still
+    be non-zero even though due_date has moved to the next month."""
+
+    def test_rolled_debt_counted_in_original_billing_month(self, company):
+        """Debt created for June, rolled to July (due_date in July, billing_month=June).
+        calculate_teacher_salary for June must find it; July must not."""
+        from apps.salaries.logic import calculate_teacher_salary
+
+        billing_june = date(THIS_MONTH.year, THIS_MONTH.month, 1)
+        next_month = (billing_june + relativedelta(months=1)).replace(day=1)
+
+        t = make_teacher(company, salary_type="percent", percent=Decimal("20"))
+        course = make_course(company, price=Decimal("500000"))
+        group = make_group(company, course, t)
+        gs = make_gs(group, company)
+
+        # Debt was billed for THIS_MONTH but due_date rolled into next month.
+        # billing_month records the original billing cycle.
+        due_in_next_month = date(next_month.year, next_month.month, 15)
+        Debt.objects.create(
+            company=company,
+            group_student=gs,
+            amount=Decimal("500000"),
+            due_date=due_in_next_month,
+            billing_month=billing_june,
+            status="unpaid",
+        )
+
+        salaries_this = calculate_teacher_salary(t, billing_june)
+        salaries_next = calculate_teacher_salary(t, next_month)
+
+        assert salaries_this, "Expected a salary record for billing_june"
+        assert salaries_this[0].base_amount == Decimal("100000"), (
+            f"Expected 500000 × 20% = 100000, got {salaries_this[0].base_amount}"
+        )
+
+        # Next month has no debts billed to it, so it should produce zero/no record.
+        if salaries_next:
+            assert salaries_next[0].base_amount == Decimal("0"), (
+                f"Next month should have no contribution, got {salaries_next[0].base_amount}"
+            )

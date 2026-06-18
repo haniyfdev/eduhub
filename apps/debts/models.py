@@ -20,6 +20,7 @@ class Debt(BaseModel):
     )
     discount_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     billing_type    = models.CharField(max_length=20, null=True, blank=True)
+    billing_month   = models.DateField(null=True, blank=True)
     updated_at      = models.DateTimeField(auto_now=True)
     confirmed_at    = models.DateTimeField(null=True, blank=True)
 
