@@ -96,15 +96,17 @@ class DebtViewSet(
         gs   = debt.group_student
 
         if gs.left_at is None:
-            # Frozen student: still in group — use today and company freeze billing type
+            # Active/frozen/reactivated student still in group — use today as end_date.
+            # Prefer the billing_type stored on the debt itself (set at freeze time);
+            # fall back to the live company setting so new debts still work.
             from apps.companies.models import CompanySettings
             from django.utils import timezone as tz
             end_date = tz.now().date()
             company_settings, _ = CompanySettings.objects.get_or_create(company=gs.group.company)
-            billing_type = company_settings.freeze_billing_type
+            billing_type = debt.billing_type or company_settings.freeze_billing_type
         else:
             end_date     = gs.left_at.date()
-            billing_type = gs.archive_billing_type or 'manual'
+            billing_type = debt.billing_type or gs.archive_billing_type or 'manual'
 
         joined_at       = gs.joined_at.date()
         month_start     = end_date.replace(day=1)

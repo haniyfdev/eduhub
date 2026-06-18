@@ -24,6 +24,7 @@ class DebtSerializer(serializers.ModelSerializer):
             'student_id', 'student_name', 'student_phone', 'student_second_phone', 'student_status',
             'group_name', 'group_id', 'course_id', 'course_name',
             'amount', 'paid_amount', 'due_date', 'status', 'updated_at', 'confirmed_at',
+            'billing_type',
             'group_student_status', 'group_student_left_at', 'archive_billing_type',
         )
         read_only_fields = ('id', 'company', 'updated_at', 'confirmed_at')

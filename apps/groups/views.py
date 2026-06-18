@@ -81,12 +81,14 @@ def _apply_freeze_proration(gs, billing_type, now):
     ).order_by('-due_date').first()
     if existing:
         existing.amount = calculated_amount
-        existing.save(update_fields=['amount'])
+        existing.billing_type = billing_type
+        existing.save(update_fields=['amount', 'billing_type'])
     elif not Debt.objects.filter(group_student=gs, confirmed_at__isnull=False).exists():
         Debt.objects.create(
             group_student=gs,
             company=gs.group.company,
             amount=calculated_amount,
+            billing_type=billing_type,
             status='unpaid',
             due_date=now.date() + timedelta(days=15),
         )

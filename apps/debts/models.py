@@ -19,6 +19,7 @@ class Debt(BaseModel):
         'discounts.Discount', on_delete=models.SET_NULL, null=True, blank=True, related_name='debts',
     )
     discount_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    billing_type    = models.CharField(max_length=20, null=True, blank=True)
     updated_at      = models.DateTimeField(auto_now=True)
     confirmed_at    = models.DateTimeField(null=True, blank=True)
 
