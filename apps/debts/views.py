@@ -92,21 +92,27 @@ class DebtViewSet(
         debt = self.get_object()
         gs   = debt.group_student
 
-        if not gs.left_at:
-            return Response({'error': 'Student has not left the group'}, status=400)
+        if gs.left_at is None:
+            # Frozen student: still in group — use today and company freeze billing type
+            from apps.companies.models import CompanySettings
+            from django.utils import timezone as tz
+            end_date = tz.now().date()
+            company_settings, _ = CompanySettings.objects.get_or_create(company=gs.group.company)
+            billing_type = company_settings.freeze_billing_type
+        else:
+            end_date     = gs.left_at.date()
+            billing_type = gs.archive_billing_type or 'manual'
 
-        left_at         = gs.left_at.date()
         joined_at       = gs.joined_at.date()
-        month_start     = left_at.replace(day=1)
+        month_start     = end_date.replace(day=1)
         effective_start = max(joined_at, month_start)
 
-        billing_type = gs.archive_billing_type or 'manual'
         course_price = Decimal(str(gs.group.course.price)) if gs.group.course else Decimal('0')
 
         lessons = Lesson.objects.filter(
             group=gs.group,
             date__gte=month_start,
-            date__lte=left_at,
+            date__lte=end_date,
         ).order_by('date')
 
         attendance_data = []
@@ -127,7 +133,7 @@ class DebtViewSet(
 
         if billing_type == 'per_day':
             days_in_month = 30
-            days_in_group = (left_at - effective_start).days + 1
+            days_in_group = (end_date - effective_start).days + 1
             per_unit          = (course_price / days_in_month).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
             units_count       = days_in_group
             total_units       = days_in_month
@@ -187,7 +193,7 @@ class DebtViewSet(
         return Response({
             'lessons':           attendance_data,
             'period_start':      effective_start.strftime('%d/%m/%Y'),
-            'left_at':           left_at.strftime('%d/%m/%Y'),
+            'left_at':           end_date.strftime('%d/%m/%Y'),
             'course_price':      float(course_price),
             'course_name':       gs.group.course.name if gs.group.course else '—',
             'group_name':        gs.group.display_name,
