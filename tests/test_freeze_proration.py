@@ -391,3 +391,139 @@ class TestUnfreezeCreatesFullPriceDebt:
         all_debts = Debt.objects.filter(group_student=group_student)
         assert all_debts.count() == 2
         assert all_debts.filter(amount=course.price).count() >= 1
+
+
+# ---------------------------------------------------------------------------
+# Group transfer — proration on leaving old group
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestTransferStudentProratesDebt:
+
+    @pytest.fixture
+    def group2(self, db, company, course, teacher, room):
+        return Group.objects.create(
+            company=company, course=course, teacher=teacher, room=room,
+            number=2, gender_type="a", status="active",
+        )
+
+    def test_per_lesson_prorates_old_group_debt(
+        self, boss_client, group, group2, student, group_student, debt, course, teacher, company_settings,
+    ):
+        """per_lesson: transferring out of a group updates the debt to reflect
+        only the lessons attended, not the full course price."""
+        company_settings.archive_billing_type = 'per_lesson'
+        company_settings.save()
+
+        total = 10
+        attended = 3
+        lessons = _make_lessons(group, teacher, total)
+        _mark_attended(lessons, student, attended)
+
+        resp = boss_client.post(
+            f"{GROUPS_URL}{group.id}/transfer-student/",
+            {'student_id': str(student.id), 'new_group_id': str(group2.id)},
+        )
+        assert resp.status_code == 200
+
+        debt.refresh_from_db()
+        expected = (Decimal(str(course.price)) / total * attended).quantize(
+            Decimal('1E+3'), rounding=ROUND_HALF_UP
+        )
+        assert debt.amount == expected
+
+    def test_per_day_prorates_old_group_debt(
+        self, boss_client, group, group2, student, group_student, debt, course, company_settings,
+    ):
+        """per_day: transferring out prorates debt by days active in the month."""
+        company_settings.archive_billing_type = 'per_day'
+        company_settings.save()
+        today = date.today()
+        month_start = today.replace(day=1)
+        group_student.joined_at = timezone.make_aware(
+            timezone.datetime(month_start.year, month_start.month, month_start.day)
+        )
+        group_student.save()
+
+        resp = boss_client.post(
+            f"{GROUPS_URL}{group.id}/transfer-student/",
+            {'student_id': str(student.id), 'new_group_id': str(group2.id)},
+        )
+        assert resp.status_code == 200
+
+        debt.refresh_from_db()
+        import calendar
+        days_in_month = calendar.monthrange(today.year, today.month)[1]
+        days_active = (today - month_start).days + 1
+        expected = (Decimal(str(course.price)) / days_in_month * days_active).quantize(
+            Decimal('1E+3'), rounding=ROUND_HALF_UP
+        )
+        assert debt.amount == expected
+
+    def test_manual_leaves_old_group_debt_unchanged(
+        self, boss_client, group, group2, student, group_student, debt, company_settings,
+    ):
+        """manual: transfer must not change the existing debt amount."""
+        company_settings.archive_billing_type = 'manual'
+        company_settings.save()
+        original_amount = debt.amount
+
+        resp = boss_client.post(
+            f"{GROUPS_URL}{group.id}/transfer-student/",
+            {'student_id': str(student.id), 'new_group_id': str(group2.id)},
+        )
+        assert resp.status_code == 200
+
+        debt.refresh_from_db()
+        assert debt.amount == original_amount
+
+    def test_old_gs_closed_as_left(
+        self, boss_client, group, group2, student, group_student, company_settings,
+    ):
+        """Old GroupStudent must have status='left' and left_at set after transfer."""
+        company_settings.archive_billing_type = 'manual'
+        company_settings.save()
+
+        boss_client.post(
+            f"{GROUPS_URL}{group.id}/transfer-student/",
+            {'student_id': str(student.id), 'new_group_id': str(group2.id)},
+        )
+
+        group_student.refresh_from_db()
+        assert group_student.status == 'left'
+        assert group_student.left_at is not None
+
+    def test_new_enrollment_is_trial_with_no_debt(
+        self, boss_client, group, group2, student, group_student, debt, company_settings,
+    ):
+        """New GroupStudent in the target group must be trial, and no debt is
+        created for it (the monthly scheduler handles trial→active billing)."""
+        company_settings.archive_billing_type = 'manual'
+        company_settings.save()
+
+        boss_client.post(
+            f"{GROUPS_URL}{group.id}/transfer-student/",
+            {'student_id': str(student.id), 'new_group_id': str(group2.id)},
+        )
+
+        from apps.groups.models import GroupStudent as GS
+        new_gs = GS.objects.filter(group=group2, student=student, left_at__isnull=True).first()
+        assert new_gs is not None
+        assert new_gs.status == 'trial'
+        assert not Debt.objects.filter(group_student=new_gs).exists()
+
+    def test_transfer_sets_archive_billing_type_on_old_gs(
+        self, boss_client, group, group2, student, group_student, company_settings,
+    ):
+        """archive_billing_type is stored on the old GroupStudent so the debt
+        modal can display the correct billing method."""
+        company_settings.archive_billing_type = 'per_lesson'
+        company_settings.save()
+
+        boss_client.post(
+            f"{GROUPS_URL}{group.id}/transfer-student/",
+            {'student_id': str(student.id), 'new_group_id': str(group2.id)},
+        )
+
+        group_student.refresh_from_db()
+        assert group_student.archive_billing_type == 'per_lesson'

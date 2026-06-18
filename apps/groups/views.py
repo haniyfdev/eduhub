@@ -420,29 +420,42 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='transfer-student')
     def transfer_student(self, request, pk=None):
+        """POST /api/v1/groups/{id}/transfer-student/  body: {student_id, new_group_id}"""
         if request.user.role == 'teacher':
             return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
-        """POST /api/v1/groups/{id}/transfer-student/  body: {student_id, new_group_id}"""
         student_id = request.data.get('student_id')
         new_group_id = request.data.get('new_group_id')
         if not student_id or not new_group_id:
             return Response({'detail': 'student_id and new_group_id are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            gs = GroupStudent.objects.get(group_id=pk, student_id=student_id, left_at__isnull=True)
+            gs = GroupStudent.objects.select_related(
+                'group__course', 'group__company'
+            ).get(group_id=pk, student_id=student_id, left_at__isnull=True)
         except GroupStudent.DoesNotExist:
             return Response({'detail': 'Active membership not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        gs.left_at = timezone.now()
-        gs.save(update_fields=['left_at'])
+        from apps.companies.models import CompanySettings
+        from django.db import transaction
+        with transaction.atomic():
+            now = timezone.now()
+            company_settings, _ = CompanySettings.objects.get_or_create(company=gs.group.company)
+            billing_type = company_settings.archive_billing_type
 
-        GroupStudent.objects.create(
-            group_id=new_group_id,
-            student_id=student_id,
-            joined_at=timezone.now(),
-            status='trial',
-        )
-        return Response({'status': 'transferred'})
+            gs.status = 'left'
+            gs.left_at = now
+            gs.archive_billing_type = billing_type
+            gs.save(update_fields=['status', 'left_at', 'archive_billing_type'])
+
+            _apply_freeze_proration(gs, billing_type, now)
+
+            GroupStudent.objects.create(
+                group_id=new_group_id,
+                student_id=student_id,
+                joined_at=now,
+                status='trial',
+            )
+        return Response({'status': 'transferred', 'billing_type': billing_type})
 
     @action(detail=True, methods=['post'], url_path='change-teacher')
     def change_teacher(self, request, pk=None):
