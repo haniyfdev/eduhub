@@ -11,7 +11,7 @@ class Debt(BaseModel):
     ]
 
     company = models.ForeignKey('companies.Company', on_delete=models.CASCADE, related_name='debts')
-    group_student = models.OneToOneField('groups.GroupStudent', on_delete=models.CASCADE, related_name='debt')
+    group_student = models.ForeignKey('groups.GroupStudent', on_delete=models.CASCADE, related_name='debts')
     amount          = models.DecimalField(max_digits=15, decimal_places=2)
     due_date        = models.DateField()
     status          = models.CharField(max_length=10, choices=STATUS_CHOICES)

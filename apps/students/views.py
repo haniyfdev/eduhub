@@ -173,9 +173,33 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def unfreeze(self, request, pk=None):
+        from datetime import timedelta
+        from decimal import Decimal
+        from apps.debts.models import Debt
+        from apps.groups.models import GroupStudent
+
         student = self.get_object()
         if student.status != 'frozen':
             return Response({'error': "O'quvchi muzlatilmagan"}, status=400)
+
+        from django.utils import timezone as tz
+        now = tz.now()
+        memberships = GroupStudent.objects.filter(
+            student=student,
+            left_at__isnull=True,
+        ).select_related('group__course', 'group__company')
+        for gs in memberships:
+            course = gs.group.course
+            if not course or not course.price:
+                continue
+            Debt.objects.create(
+                group_student=gs,
+                company=gs.group.company,
+                amount=Decimal(str(course.price)),
+                due_date=now.date() + timedelta(days=30),
+                status='unpaid',
+            )
+
         student.status = 'active'
         student.save(update_fields=['status'])
         return Response({'status': 'active'})

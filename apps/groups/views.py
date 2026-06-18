@@ -74,13 +74,15 @@ def _apply_freeze_proration(gs, billing_type, now):
     if calculated_amount is None:
         return
 
-    existing = Debt.objects.filter(group_student=gs).first()
+    existing = Debt.objects.filter(
+        group_student=gs,
+        confirmed_at__isnull=True,
+        status__in=['unpaid', 'overdue'],
+    ).order_by('-due_date').first()
     if existing:
-        if existing.confirmed_at is not None or existing.status == 'paid':
-            return
         existing.amount = calculated_amount
         existing.save(update_fields=['amount'])
-    else:
+    elif not Debt.objects.filter(group_student=gs, confirmed_at__isnull=False).exists():
         Debt.objects.create(
             group_student=gs,
             company=gs.group.company,
@@ -504,6 +506,10 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def unfreeze(self, request, pk=None):
+        from datetime import timedelta
+        from decimal import Decimal
+        from apps.debts.models import Debt
+
         if request.user.role == 'teacher':
             return Response({'error': "Bu amal uchun huquqingiz yo'q. Admin orqali murojaat qiling."}, status=403)
         group = self.get_object()
@@ -511,13 +517,24 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Group is not frozen.'}, status=status.HTTP_400_BAD_REQUEST)
         group.status = 'active'
         group.save(update_fields=['status'])
+
+        now = timezone.now()
         enrollments = GroupStudent.objects.filter(
             group=group, left_at__isnull=True
-        ).select_related('student')
+        ).select_related('student', 'group__course', 'group__company')
         for gs in enrollments:
             if gs.student.status == 'frozen':
                 gs.student.status = 'active'
                 gs.student.save(update_fields=['status'])
+            course = gs.group.course
+            if course and course.price:
+                Debt.objects.create(
+                    group_student=gs,
+                    company=gs.group.company,
+                    amount=Decimal(str(course.price)),
+                    due_date=now.date() + timedelta(days=30),
+                    status='unpaid',
+                )
         return Response({'status': 'active'})
 
     @action(detail=True, methods=['post'])

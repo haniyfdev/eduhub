@@ -57,7 +57,7 @@ def assign_monthly_student_debts():
                         discount_amount = Decimal('0')
                         final_amount = course_price
 
-                    debt = Debt.objects.select_for_update().filter(group_student=gs).first()
+                    debt = Debt.objects.select_for_update().filter(group_student=gs).order_by('-due_date').first()
 
                     if debt is None:
                         Debt.objects.create(

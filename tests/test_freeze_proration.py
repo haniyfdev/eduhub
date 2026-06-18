@@ -152,6 +152,7 @@ class TestGroupFreezeProratesDebt:
 
         debt.refresh_from_db()
         assert debt.amount == original_amount
+        assert Debt.objects.filter(group_student=group_student).count() == 1
 
     def test_creates_new_debt_when_none_exists(
         self, boss_client, group, student, group_student, course, teacher, company_settings,
@@ -272,3 +273,121 @@ class TestSchedulerExcludesFrozenStudents:
         assign_monthly_student_debts()
 
         assert Debt.objects.filter(group_student=group_student).exists()
+
+
+# ---------------------------------------------------------------------------
+# freeze_billing_type end-to-end — settings → modal endpoint
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestFreezeBillingTypeEndToEnd:
+
+    def test_billing_type_per_lesson_read_from_settings(
+        self, boss_client, group, student, group_student, debt, course, teacher, company_settings,
+    ):
+        """CompanySettings.freeze_billing_type='per_lesson' must be returned by
+        last-month-attendance for a frozen student, not fall back to 'manual'."""
+        company_settings.freeze_billing_type = 'per_lesson'
+        company_settings.save()
+        group_student.status = 'active'
+        group_student.save()
+
+        lessons = _make_lessons(group, teacher, 5)
+        _mark_attended(lessons, student, 2)
+
+        resp = boss_client.post(f"{STUDENTS_URL}{student.id}/freeze/")
+        assert resp.status_code == 200
+
+        resp = boss_client.get(f"/api/v1/debts/{debt.id}/last-month-attendance/")
+        assert resp.status_code == 200
+        assert resp.data['billing_type'] == 'per_lesson'
+
+    def test_billing_type_per_day_read_from_settings(
+        self, boss_client, group, student, group_student, debt, course, company_settings,
+    ):
+        """freeze_billing_type='per_day' is correctly returned for a frozen student."""
+        company_settings.freeze_billing_type = 'per_day'
+        company_settings.save()
+
+        resp = boss_client.post(f"{STUDENTS_URL}{student.id}/freeze/")
+        assert resp.status_code == 200
+
+        resp = boss_client.get(f"/api/v1/debts/{debt.id}/last-month-attendance/")
+        assert resp.status_code == 200
+        assert resp.data['billing_type'] == 'per_day'
+
+
+# ---------------------------------------------------------------------------
+# Unfreeze — full-price debt creation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestUnfreezeCreatesFullPriceDebt:
+
+    def test_unfreeze_creates_second_full_price_debt(
+        self, boss_client, group, student, group_student, debt, course, company_settings,
+    ):
+        """After freeze → unfreeze, there must be 2 Debt records: the original
+        (possibly prorated) debt and a new full-price reactivation debt."""
+        company_settings.freeze_billing_type = 'manual'
+        company_settings.save()
+
+        boss_client.post(f"{STUDENTS_URL}{student.id}/freeze/")
+
+        resp = boss_client.post(f"{STUDENTS_URL}{student.id}/unfreeze/")
+        assert resp.status_code == 200
+
+        all_debts = Debt.objects.filter(group_student=group_student)
+        assert all_debts.count() == 2
+
+        full_price_debts = all_debts.filter(amount=course.price)
+        assert full_price_debts.count() >= 1
+
+    def test_prorated_debt_unchanged_after_unfreeze(
+        self, boss_client, group, student, group_student, debt, course, teacher, company_settings,
+    ):
+        """The prorated freeze debt must remain intact after unfreeze; only a new
+        separate full-price debt is added."""
+        company_settings.freeze_billing_type = 'per_lesson'
+        company_settings.save()
+        group_student.status = 'active'
+        group_student.save()
+
+        total = 8
+        attended = 3
+        lessons = _make_lessons(group, teacher, total)
+        _mark_attended(lessons, student, attended)
+
+        boss_client.post(f"{STUDENTS_URL}{student.id}/freeze/")
+        debt.refresh_from_db()
+        prorated_amount = debt.amount
+        expected_prorated = (Decimal(str(course.price)) / total * attended).quantize(
+            Decimal('1E+3'), rounding=ROUND_HALF_UP
+        )
+        assert prorated_amount == expected_prorated
+
+        boss_client.post(f"{STUDENTS_URL}{student.id}/unfreeze/")
+
+        debt.refresh_from_db()
+        assert debt.amount == prorated_amount
+
+        new_debt = Debt.objects.filter(group_student=group_student).exclude(id=debt.id).first()
+        assert new_debt is not None
+        assert new_debt.amount == Decimal(str(course.price))
+
+    def test_group_unfreeze_creates_full_price_debt_per_student(
+        self, boss_client, group, student, group_student, debt, course, company_settings,
+    ):
+        """Group-level unfreeze must also create a new full-price debt for every
+        student that was in the frozen group."""
+        company_settings.freeze_billing_type = 'manual'
+        company_settings.save()
+
+        boss_client.post(f"{GROUPS_URL}{group.id}/freeze/")
+
+        resp = boss_client.post(f"{GROUPS_URL}{group.id}/unfreeze/")
+        assert resp.status_code == 200
+
+        all_debts = Debt.objects.filter(group_student=group_student)
+        assert all_debts.count() == 2
+        assert all_debts.filter(amount=course.price).count() >= 1
