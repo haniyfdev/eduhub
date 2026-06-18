@@ -148,6 +148,25 @@ class StudentViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             return Response({'error': "O'quvchi allaqachon muzlatilgan"}, status=400)
         if student.status == 'archived':
             return Response({'error': "Arxivlangan o'quvchini muzlatib bo'lmaydi"}, status=400)
+
+        from django.utils import timezone as tz
+        from apps.companies.models import CompanySettings
+        from apps.groups.models import GroupStudent
+        from apps.groups.views import _apply_freeze_proration
+
+        now = tz.now()
+        company_settings, _ = CompanySettings.objects.get_or_create(company=student.company)
+        freeze_billing_type = company_settings.freeze_billing_type
+
+        active_memberships = GroupStudent.objects.filter(
+            student=student,
+            left_at__isnull=True,
+            group__status='active',
+        ).select_related('group__course', 'group__company')
+
+        for gs in active_memberships:
+            _apply_freeze_proration(gs, freeze_billing_type, now)
+
         student.status = 'frozen'
         student.save(update_fields=['status'])
         return Response({'status': 'frozen'})

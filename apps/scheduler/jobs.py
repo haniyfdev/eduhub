@@ -27,6 +27,8 @@ def assign_monthly_student_debts():
             status='active',
             group__status='active',
             group__company__status='active',
+        ).exclude(
+            student__status='frozen',
         ).select_related('student', 'group__course', 'group__company')
 
         for gs in enrollments:

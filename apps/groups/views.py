@@ -1,3 +1,7 @@
+import calendar
+import logging
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.db.models import Case, IntegerField, Q, When
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
@@ -12,6 +16,78 @@ from utils.mixins import ArchiveMixin, CompanyFilterMixin
 from utils.permissions import IsBossManagerOrAdmin, IsBossOrManager, IsBossOrManagerOrAdmin
 from .models import Group, GroupStudent
 from .serializers import GroupSerializer, GroupCreateSerializer
+
+logger = logging.getLogger(__name__)
+
+
+def _apply_freeze_proration(gs, billing_type, now):
+    """Prorate (or create) the debt for a GroupStudent at the moment of freezing.
+
+    Updates the existing Debt amount to reflect only the lessons attended /
+    days active before the freeze.  Confirmed or paid debts are left untouched.
+    With billing_type='manual' the function is a no-op.
+    """
+    from datetime import timedelta
+    from apps.debts.models import Debt
+
+    if billing_type == 'manual':
+        return
+
+    course = gs.group.course
+    if not course or not course.price:
+        return
+
+    course_price = Decimal(str(course.price))
+    calculated_amount = None
+
+    if billing_type == 'per_lesson':
+        from apps.lessons.models import Lesson
+        from apps.attendance.models import Attendance
+        month_start = now.date().replace(day=1)
+        total_lessons = Lesson.objects.filter(
+            group=gs.group,
+            date__gte=month_start,
+            date__lte=now.date(),
+        ).count()
+        attended = Attendance.objects.filter(
+            student_id=gs.student_id,
+            lesson__group=gs.group,
+            lesson__date__gte=month_start,
+            lesson__date__lte=now.date(),
+            status__in=['present', 'late'],
+        ).count()
+        if total_lessons > 0:
+            calculated_amount = (course_price / total_lessons * attended).quantize(
+                Decimal('1E+3'), rounding=ROUND_HALF_UP
+            )
+
+    elif billing_type == 'per_day':
+        month_start = now.date().replace(day=1)
+        effective_start = max(gs.joined_at.date(), month_start)
+        days_in_group = (now.date() - effective_start).days + 1
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        if days_in_month > 0:
+            calculated_amount = (course_price / days_in_month * days_in_group).quantize(
+                Decimal('1E+3'), rounding=ROUND_HALF_UP
+            )
+
+    if calculated_amount is None:
+        return
+
+    existing = Debt.objects.filter(group_student=gs).first()
+    if existing:
+        if existing.confirmed_at is not None or existing.status == 'paid':
+            return
+        existing.amount = calculated_amount
+        existing.save(update_fields=['amount'])
+    else:
+        Debt.objects.create(
+            group_student=gs,
+            company=gs.group.company,
+            amount=calculated_amount,
+            status='unpaid',
+            due_date=now.date() + timedelta(days=15),
+        )
 
 
 class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
@@ -405,15 +481,25 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
         group = self.get_object()
         if group.status != 'active':
             return Response({'detail': 'Only active groups can be frozen.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        from apps.companies.models import CompanySettings
+        company_settings, _ = CompanySettings.objects.get_or_create(company=group.company)
+        freeze_billing_type = company_settings.freeze_billing_type
+
         group.status = 'frozen'
         group.save(update_fields=['status'])
+
         enrollments = GroupStudent.objects.filter(
             group=group, left_at__isnull=True
-        ).select_related('student')
+        ).select_related('student', 'group__course', 'group__company')
+
         for gs in enrollments:
+            _apply_freeze_proration(gs, freeze_billing_type, now)
             if gs.student.status == 'active':
                 gs.student.status = 'frozen'
                 gs.student.save(update_fields=['status'])
+
         return Response({'status': 'frozen', 'frozen_students': enrollments.count()})
 
     @action(detail=True, methods=['post'])

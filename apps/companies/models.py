@@ -35,6 +35,7 @@ class CompanySettings(BaseModel):
     absent_policy                  = models.CharField(max_length=20, choices=ABSENT_POLICY_CHOICES, default='ignore')
     teacher_contract_break_policy  = models.CharField(max_length=20, choices=CONTRACT_BREAK_CHOICES, default='full')
     archive_billing_type           = models.CharField(max_length=20, choices=ARCHIVE_BILLING_CHOICES, default='manual')
+    freeze_billing_type            = models.CharField(max_length=20, choices=ARCHIVE_BILLING_CHOICES, default='manual')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
