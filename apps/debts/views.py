@@ -68,9 +68,12 @@ class DebtViewSet(
             q = (
                 Q(group_student__student__first_name__icontains=search) |
                 Q(group_student__student__last_name__icontains=search) |
-                Q(group_student__student__phone__icontains=search) |
                 Q(group_student__group__gender_type__icontains=search)
             )
+            # Phone search only for 4+ char queries — a single digit like '2'
+            # matches almost every phone number and swamps the group filter.
+            if len(search) >= 4:
+                q |= Q(group_student__student__phone__icontains=search)
             if search.isdigit():
                 q |= Q(group_student__group__number=int(search))
             else:

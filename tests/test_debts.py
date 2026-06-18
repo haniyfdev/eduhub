@@ -110,6 +110,96 @@ class TestDebtOperations:
 
 
 @pytest.mark.django_db
+class TestDebtSearch:
+    """Search by group number must not be drowned out by phone number matches."""
+
+    def test_search_by_group_number_returns_only_that_group(
+        self, boss_client, company, group, student, group_student, course, teacher, room, db
+    ):
+        """Searching '1' (the group number) must return only debts in group 1,
+        not debts from other groups whose students happen to have '1' in their phone."""
+        from django.utils import timezone
+        from apps.groups.models import Group, GroupStudent
+
+        # Debt for the existing group (number=1) already via group_student fixture.
+        # Create a second group (number=2) with its own student/debt.
+        group2 = Group.objects.create(
+            company=company, course=course, teacher=teacher, room=room,
+            number=2, gender_type="b", status="active",
+        )
+        student2 = Student.objects.create(
+            company=company, first_name="Other", last_name="Student",
+            phone=make_phone(), status="active",
+        )
+        gs2 = GroupStudent.objects.create(group=group2, student=student2, joined_at=timezone.now())
+        debt2 = Debt.objects.create(
+            company=company, group_student=gs2,
+            amount=Decimal("300000"),
+            due_date=date.today() + timedelta(days=30),
+            status="unpaid",
+        )
+        # Also create a debt for the existing (group 1) student.
+        debt1 = Debt.objects.create(
+            company=company, group_student=group_student,
+            amount=Decimal("500000"),
+            due_date=date.today() + timedelta(days=30),
+            status="unpaid",
+        )
+
+        resp = boss_client.get(f"{DEBTS_URL}?search=2")
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.data["results"]]
+        assert str(debt2.id) in ids
+        assert str(debt1.id) not in ids
+
+    def test_search_by_student_name_works(self, boss_client, debt, student):
+        """Searching by part of a student's first name must return their debt."""
+        resp = boss_client.get(f"{DEBTS_URL}?search={student.first_name[:3]}")
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.data["results"]]
+        assert str(debt.id) in ids
+
+    def test_short_digit_does_not_match_via_phone(
+        self, boss_client, company, group, group_student, course, teacher, room, db
+    ):
+        """A single-digit search must NOT match every row via phone__icontains."""
+        from django.utils import timezone
+        from apps.groups.models import Group, GroupStudent
+
+        # Debt for group 1.
+        debt1 = Debt.objects.create(
+            company=company, group_student=group_student,
+            amount=Decimal("500000"),
+            due_date=date.today() + timedelta(days=30),
+            status="unpaid",
+        )
+        # Create group 9 with a student whose phone also contains '1' (almost certain).
+        group9 = Group.objects.create(
+            company=company, course=course, teacher=teacher, room=room,
+            number=9, gender_type="a", status="active",
+        )
+        student9 = Student.objects.create(
+            company=company, first_name="Zara", last_name="Zed",
+            phone="+998901111111", status="active",
+        )
+        gs9 = GroupStudent.objects.create(group=group9, student=student9, joined_at=timezone.now())
+        debt9 = Debt.objects.create(
+            company=company, group_student=gs9,
+            amount=Decimal("200000"),
+            due_date=date.today() + timedelta(days=30),
+            status="unpaid",
+        )
+
+        # Search '1' — should match group 1 (number=1), not group 9 (even though
+        # student9's phone '+998901111111' is full of '1's).
+        resp = boss_client.get(f"{DEBTS_URL}?search=1")
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.data["results"]]
+        assert str(debt1.id) in ids
+        assert str(debt9.id) not in ids
+
+
+@pytest.mark.django_db
 class TestAssignMonthlyDebts:
     def test_assign_monthly_debts_task(self, company, student, group, group_student, course, db):
         from apps.debts.tasks import assign_monthly_debts

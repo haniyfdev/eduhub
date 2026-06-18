@@ -20,6 +20,7 @@ from django.utils import timezone
 from apps.attendance.models import Attendance
 from apps.companies.models import CompanySettings
 from apps.debts.models import Debt
+from apps.groups.models import Group
 from apps.lessons.models import Lesson
 from apps.scheduler.jobs import assign_monthly_student_debts
 
