@@ -37,6 +37,9 @@ class SmsTemplateViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'create':
+            user = getattr(self.request, 'user', None)
+            if user and getattr(user, 'role', None) == 'superadmin':
+                return [IsAuthenticated()]
             return [IsBossOrManager()]
         return [IsAuthenticated()]
 
