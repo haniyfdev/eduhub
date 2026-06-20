@@ -1,3 +1,4 @@
+import datetime
 import re
 
 from aiogram import F, Router
@@ -67,13 +68,41 @@ _UZ_MONTHS = [
     'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr',
 ]
 
+_LESSON_STATUS_LABELS = {
+    'finished': 'Tugallangan',
+    'ongoing':  'Jarayonda',
+    'pending':  "Boshlanmagan",
+}
+
+_BRANCH_CACHE_TTL = 365 * 24 * 3600
+
+
+def _fmt_money(value) -> str:
+    return f"{int(value):,}".replace(',', ' ')
+
 
 # ── Boss menu ──────────────────────────────────────────────────────────────
 
 def _boss_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="💵 Maoshlar", callback_data="boss_salaries"),
+        InlineKeyboardButton(text="📊 Hisobotlar", callback_data="boss_reports"),
     ]])
+
+
+def _reports_menu_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 To'lovlar", callback_data="rep_payments")],
+        [InlineKeyboardButton(text="⚠️ Qarzdorlar", callback_data="rep_debts")],
+        [InlineKeyboardButton(text="👥 Guruhlar", callback_data="rep_groups")],
+        [InlineKeyboardButton(text="📚 Bugungi darslar", callback_data="rep_lessons")],
+        [InlineKeyboardButton(text="💵 Maoshlar", callback_data="rep_salaries")],
+    ])
+
+
+def _branch_picker_kb(companies) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=c.name, callback_data=f"branch:{c.id}")] for c in companies
+    ])
 
 
 def _get_boss_user(chat_id: int):
@@ -87,6 +116,62 @@ def _get_boss_user(chat_id: int):
     )
 
 
+def _get_accessible_companies(boss):
+    """The boss's own company plus its active branches (mirrors _build_user_payload)."""
+    from apps.companies.models import Company
+    companies = [boss.company]
+    branches = Company.objects.filter(branch_of_id=boss.company_id, status='active').order_by('name')
+    companies.extend(branches)
+    return companies
+
+
+def _resolve_branch(boss, chat_id):
+    """Returns (company, companies). company is None when the boss has multiple
+    branches and none is cached yet for this chat — caller must show the picker."""
+    from django.core.cache import cache
+
+    companies = _get_accessible_companies(boss)
+    if len(companies) <= 1:
+        return (companies[0] if companies else None), companies
+
+    cached_id = cache.get(f"bot_branch:{chat_id}")
+    if cached_id:
+        match = next((c for c in companies if str(c.id) == cached_id), None)
+        if match:
+            return match, companies
+    return None, companies
+
+
+async def _resolve_company_for_callback(callback: CallbackQuery, boss, chat_id: int):
+    """Resolves the selected branch company for a boss callback. If ambiguous,
+    sends the branch picker and returns None."""
+    from asgiref.sync import sync_to_async
+
+    company, companies = await sync_to_async(_resolve_branch)(boss, chat_id)
+    if company is None:
+        await callback.message.answer("Filialni tanlang:", reply_markup=_branch_picker_kb(companies))
+        return None
+    return company
+
+
+async def _require_boss_and_company(callback: CallbackQuery):
+    """Resolves (boss, company) for a boss-only callback. Sends a denial alert
+    or the branch picker as needed; in those cases company is None."""
+    from asgiref.sync import sync_to_async
+
+    chat_id = callback.message.chat.id
+    boss = await sync_to_async(_get_boss_user)(chat_id)
+    if not boss or not boss.company:
+        await callback.answer("Ruxsat yo'q.", show_alert=True)
+        return None, None
+
+    await callback.answer()
+    company = await _resolve_company_for_callback(callback, boss, chat_id)
+    return boss, company
+
+
+# ── Data fetchers ────────────────────────────────────────────────────────────
+
 def _get_boss_salaries(company, month):
     """Generate salaries for current month and return per-teacher totals.
 
@@ -98,11 +183,9 @@ def _get_boss_salaries(company, month):
     from apps.salaries.models import TeacherSalary
     from apps.teachers.models import Teacher
 
-    # Step 1 — generate/recalculate (identical to TeacherSalaryViewSet._run_generate)
     for teacher in Teacher.objects.filter(company=company, status='active'):
         calculate_teacher_salary(teacher, month)
 
-    # Step 2 — read results with the same filters as get_queryset + list()
     salaries = (
         TeacherSalary.objects
         .filter(company=company, month__year=month.year, month__month=month.month)
@@ -115,7 +198,6 @@ def _get_boss_salaries(company, month):
         .distinct()
     )
 
-    # Step 3 — group by teacher (same as list() teacher_map logic)
     teacher_totals: dict[str, dict] = {}
     for s in salaries:
         tid = str(s.teacher_id)
@@ -126,7 +208,154 @@ def _get_boss_salaries(company, month):
             }
         teacher_totals[tid]['total'] += float(s.calculated_amount)
 
-    return list(teacher_totals.values())
+    return sorted(teacher_totals.values(), key=lambda r: r['name'])
+
+
+def _get_today_payments(company, today):
+    from apps.payments.models import Payment
+
+    qs = (
+        Payment.objects
+        .filter(company=company, paid_at__date=today)
+        .select_related('group_student__student')
+        .order_by('paid_at')
+    )
+    return [
+        {
+            'name':   f"{p.group_student.student.first_name} {p.group_student.student.last_name}",
+            'amount': float(p.amount),
+            'time':   p.paid_at.strftime('%H:%M'),
+        }
+        for p in qs
+    ]
+
+
+def _get_debtors(company):
+    from apps.debts.models import Debt
+
+    qs = (
+        Debt.objects
+        .filter(company=company, status__in=['unpaid', 'partial', 'overdue'])
+        .select_related('group_student__student')
+        .order_by('due_date')
+    )
+    return [
+        {
+            'name':     f"{d.group_student.student.first_name} {d.group_student.student.last_name}",
+            'amount':   float(d.amount),
+            'due_date': d.due_date.strftime('%d.%m.%Y'),
+        }
+        for d in qs
+    ]
+
+
+def _get_groups_summary(company):
+    from apps.groups.models import Group
+
+    qs = (
+        Group.objects
+        .filter(company=company, status='active')
+        .select_related('course', 'teacher__user')
+        .order_by('number')
+    )
+    rows = []
+    for g in qs:
+        count = g.memberships.filter(left_at__isnull=True, status__in=['active', 'trial']).count()
+        rows.append({
+            'name':    f"{g.number}{(g.gender_type or '').upper()}",
+            'course':  g.course.name if g.course else '—',
+            'teacher': g.teacher.user.get_full_name() if g.teacher and g.teacher.user else '—',
+            'count':   count,
+        })
+    return rows
+
+
+def _get_today_lessons(company, today):
+    from apps.lessons.models import Lesson
+
+    qs = (
+        Lesson.objects
+        .filter(group__company=company, date=today)
+        .select_related('group', 'teacher__user')
+        .order_by('group__number')
+    )
+    return [
+        {
+            'group':      f"{l.group.number}{(l.group.gender_type or '').upper()}",
+            'teacher':    l.teacher.user.get_full_name() if l.teacher and l.teacher.user else '—',
+            'status':     l.status,
+            'started_at': l.started_at.strftime('%H:%M') if l.started_at else None,
+        }
+        for l in qs
+    ]
+
+
+# ── Formatters ───────────────────────────────────────────────────────────────
+
+def _format_salaries(rows, month_label):
+    if not rows:
+        return f"💵 <b>Maoshlar — {month_label}</b>\n\nBu oy uchun hisoblangan maosh yo'q."
+    lines = [f"💵 <b>Maoshlar — {month_label}</b>\n"]
+    for r in rows:
+        lines.append(f"• {r['name']} — {_fmt_money(r['total'])} so'm")
+    total = sum(r['total'] for r in rows)
+    lines.append(f"\n<b>Jami: {_fmt_money(total)} so'm</b>")
+    return "\n".join(lines)
+
+
+def _format_payments(rows, today):
+    label = today.strftime('%d.%m.%Y')
+    if not rows:
+        return f"💰 <b>Bugungi to'lovlar — {label}</b>\n\nBugun hali to'lov bo'lmadi."
+    lines = [f"💰 <b>Bugungi to'lovlar — {label}</b>\n"]
+    for r in rows:
+        lines.append(f"• {r['name']} — {_fmt_money(r['amount'])} so'm ({r['time']})")
+    total = sum(r['amount'] for r in rows)
+    lines.append(f"\n<b>Jami: {_fmt_money(total)} so'm</b>")
+    lines.append(
+        "\nUzoqroq davr (hafta, 10-20 kun) uchun veb-saytdagi boshqaruv panelini "
+        "tekshiring — bot faqat bugungi ma'lumotni ko'rsatadi."
+    )
+    return "\n".join(lines)
+
+
+def _format_debts(rows):
+    if not rows:
+        return "⚠️ <b>Qarzdorlar</b>\n\nHozircha qarzdorlik yo'q."
+    lines = [f"⚠️ <b>Qarzdorlar</b> ({len(rows)})\n"]
+    for r in rows:
+        lines.append(f"• {r['name']} — {_fmt_money(r['amount'])} so'm (muddati: {r['due_date']})")
+    total = sum(r['amount'] for r in rows)
+    lines.append(f"\n<b>Jami qarz: {_fmt_money(total)} so'm</b>")
+    return "\n".join(lines)
+
+
+def _format_groups(rows):
+    if not rows:
+        return "👥 <b>Guruhlar</b>\n\nFaol guruhlar topilmadi."
+    lines = [f"👥 <b>Guruhlar</b> ({len(rows)})\n"]
+    for r in rows:
+        lines.append(f"• {r['name']} — {r['course']} — {r['teacher']} — {r['count']} talaba")
+    return "\n".join(lines)
+
+
+def _format_lessons(rows, today):
+    label = today.strftime('%d.%m.%Y')
+    if not rows:
+        return f"📚 <b>Bugungi darslar — {label}</b>\n\nBugunga darslar topilmadi."
+    by_status: dict[str, list] = {'finished': [], 'ongoing': [], 'pending': []}
+    for r in rows:
+        by_status.setdefault(r['status'], []).append(r)
+    lines = [f"📚 <b>Bugungi darslar — {label}</b>"]
+    for status_key in ('finished', 'ongoing', 'pending'):
+        group_rows = by_status.get(status_key, [])
+        if not group_rows:
+            continue
+        lines.append(f"\n<b>{_LESSON_STATUS_LABELS[status_key]}</b>")
+        for r in group_rows:
+            time_part = f" ({r['started_at']})" if r['started_at'] else ""
+            lines.append(f"• {r['group']} — {r['teacher']}{time_part}")
+    return "\n".join(lines)
 
 
 # ── /start ─────────────────────────────────────────────────────────────────
@@ -134,17 +363,20 @@ def _get_boss_salaries(company, month):
 @router.message(CommandStart())
 async def start_handler(message: Message) -> None:
     from asgiref.sync import sync_to_async
+    from django.core.cache import cache
 
     chat_id = message.chat.id
     boss = await sync_to_async(_get_boss_user)(chat_id)
 
     if boss:
-        name = boss.get_full_name() or 'Xo\'jayin'
-        await message.answer(
-            f"👋 Salom, {name}!\n\nEduHub boshqaruv menyusi:",
-            reply_markup=_boss_menu_kb(),
-        )
-        return
+        lang_cached = await sync_to_async(cache.get)(f"bot_lang:{chat_id}")
+        if lang_cached:
+            name = boss.get_full_name() or "Xo'jayin"
+            await message.answer(
+                f"👋 Salom, {name}!\n\nEduHub boshqaruv menyusi:",
+                reply_markup=_boss_menu_kb(),
+            )
+            return
 
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="🇺🇿 O'zbek", callback_data="lang_uz"),
@@ -246,10 +478,9 @@ async def contact_handler(message: Message) -> None:
 
     if account:
         await message.answer(_SUCCESS[lang], reply_markup=ReplyKeyboardRemove())
-        # Show boss menu immediately after linking if this is a boss user
         from apps.users.models import User as UserModel
         if isinstance(account, UserModel) and account.role == 'boss':
-            name = account.get_full_name() or 'Xo\'jayin'
+            name = account.get_full_name() or "Xo'jayin"
             await message.answer(
                 f"👋 {name}, EduHub boshqaruv menyusi:",
                 reply_markup=_boss_menu_kb(),
@@ -258,48 +489,105 @@ async def contact_handler(message: Message) -> None:
         await message.answer(_ERROR[lang].format(phone=phone), reply_markup=ReplyKeyboardRemove())
 
 
-# ── Boss: Salaries callback ─────────────────────────────────────────────────
+# ── Boss: Hisobotlar menu tree ──────────────────────────────────────────────
 
-@router.callback_query(F.data == "boss_salaries")
-async def boss_salaries_callback(callback: CallbackQuery) -> None:
+@router.callback_query(F.data == "boss_reports")
+async def boss_reports_callback(callback: CallbackQuery) -> None:
+    boss, company = await _require_boss_and_company(callback)
+    if company is None:
+        return
+    await callback.message.answer("📊 Hisobotlar:", reply_markup=_reports_menu_kb())
+
+
+@router.callback_query(F.data.startswith("branch:"))
+async def branch_select_callback(callback: CallbackQuery) -> None:
     from asgiref.sync import sync_to_async
-    import datetime
+    from django.core.cache import cache
 
     chat_id = callback.message.chat.id
+    company_id = callback.data.split(":", 1)[1]
 
     boss = await sync_to_async(_get_boss_user)(chat_id)
     if not boss or not boss.company:
         await callback.answer("Ruxsat yo'q.", show_alert=True)
         return
 
-    await callback.answer()
-    await callback.message.answer("⏳ Maoshlar hisoblanmoqda...")
+    def _validate_and_store():
+        companies = _get_accessible_companies(boss)
+        if not any(str(c.id) == company_id for c in companies):
+            return False
+        cache.set(f"bot_branch:{chat_id}", company_id, timeout=_BRANCH_CACHE_TTL)
+        return True
 
-    month = datetime.date.today().replace(day=1)
-    month_label = f"{_UZ_MONTHS[month.month]} {month.year}"
-
-    def _compute():
-        return _get_boss_salaries(boss.company, month)
-
-    rows = await sync_to_async(_compute)()
-
-    if not rows:
-        await callback.message.answer(
-            f"💵 <b>Maoshlar — {month_label}</b>\n\n"
-            "Bu oy uchun hisoblangan maosh yo'q.",
-            parse_mode="HTML",
-        )
+    valid = await sync_to_async(_validate_and_store)()
+    if not valid:
+        await callback.answer("Noto'g'ri filial.", show_alert=True)
         return
 
-    rows.sort(key=lambda r: r['name'])
-    grand_total = sum(r['total'] for r in rows)
+    await callback.answer()
+    await callback.message.answer("📊 Hisobotlar:", reply_markup=_reports_menu_kb())
 
-    lines = [f"💵 <b>Maoshlar — {month_label}</b>\n"]
-    for r in rows:
-        formatted = f"{int(r['total']):,}".replace(',', ' ')
-        lines.append(f"• {r['name']} — {formatted} so'm")
 
-    total_fmt = f"{int(grand_total):,}".replace(',', ' ')
-    lines.append(f"\n<b>Jami: {total_fmt} so'm</b>")
+@router.callback_query(F.data == "rep_payments")
+async def report_payments_callback(callback: CallbackQuery) -> None:
+    from asgiref.sync import sync_to_async
 
-    await callback.message.answer("\n".join(lines), parse_mode="HTML")
+    boss, company = await _require_boss_and_company(callback)
+    if company is None:
+        return
+
+    today = datetime.date.today()
+    rows = await sync_to_async(_get_today_payments)(company, today)
+    await callback.message.answer(_format_payments(rows, today), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "rep_debts")
+async def report_debts_callback(callback: CallbackQuery) -> None:
+    from asgiref.sync import sync_to_async
+
+    boss, company = await _require_boss_and_company(callback)
+    if company is None:
+        return
+
+    rows = await sync_to_async(_get_debtors)(company)
+    await callback.message.answer(_format_debts(rows), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "rep_groups")
+async def report_groups_callback(callback: CallbackQuery) -> None:
+    from asgiref.sync import sync_to_async
+
+    boss, company = await _require_boss_and_company(callback)
+    if company is None:
+        return
+
+    rows = await sync_to_async(_get_groups_summary)(company)
+    await callback.message.answer(_format_groups(rows), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "rep_lessons")
+async def report_lessons_callback(callback: CallbackQuery) -> None:
+    from asgiref.sync import sync_to_async
+
+    boss, company = await _require_boss_and_company(callback)
+    if company is None:
+        return
+
+    today = datetime.date.today()
+    rows = await sync_to_async(_get_today_lessons)(company, today)
+    await callback.message.answer(_format_lessons(rows, today), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "rep_salaries")
+async def report_salaries_callback(callback: CallbackQuery) -> None:
+    from asgiref.sync import sync_to_async
+
+    boss, company = await _require_boss_and_company(callback)
+    if company is None:
+        return
+
+    await callback.message.answer("⏳ Maoshlar hisoblanmoqda...")
+    month = datetime.date.today().replace(day=1)
+    month_label = f"{_UZ_MONTHS[month.month]} {month.year}"
+    rows = await sync_to_async(_get_boss_salaries)(company, month)
+    await callback.message.answer(_format_salaries(rows, month_label), parse_mode="HTML")

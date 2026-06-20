@@ -21,6 +21,14 @@ def _fake_sync_to_async(fn, **kwargs):
     return wrapper
 
 
+@pytest.fixture(autouse=True)
+def _allow_sync_db_in_async_context(monkeypatch):
+    """_fake_sync_to_async runs ORM calls directly inside the running event
+    loop (on purpose, so they share the test's transaction/connection).
+    Django's async-safety guard otherwise raises SynchronousOnlyOperation."""
+    monkeypatch.setenv('DJANGO_ALLOW_ASYNC_UNSAFE', 'true')
+
+
 def _contact_message(phone_number: str, chat_id: int = 12345) -> AsyncMock:
     msg = AsyncMock()
     msg.contact = MagicMock()
@@ -40,7 +48,15 @@ class TestStartHandler:
         from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup
 
         message = AsyncMock()
-        run(start_handler(message))
+        message.chat = MagicMock()
+        message.chat.id = 12345
+
+        with (
+            patch('asgiref.sync.sync_to_async', _fake_sync_to_async),
+            patch('apps.users.models.User.objects') as mock_objects,
+        ):
+            mock_objects.filter.return_value.select_related.return_value.first.return_value = None
+            run(start_handler(message))
 
         message.answer.assert_called_once()
         kb = message.answer.call_args.kwargs['reply_markup']
@@ -63,6 +79,93 @@ class TestStartHandler:
         assert isinstance(kb2, ReplyKeyboardMarkup)
         assert kb2.keyboard[0][0].text == "📱 Telefon raqamni ulash"
         assert kb2.keyboard[0][0].request_contact is True
+
+
+# ---------------------------------------------------------------------------
+# Boss-detection on /start — non-boss flow untouched, returning boss skips
+# the language picker once a language was already chosen in a prior session
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db(transaction=True)
+class TestStartHandlerBossDetection:
+    def test_non_boss_user_sees_language_picker(self, teacher_user):
+        from apps.telegram_bot.handlers import start_handler
+        from aiogram.types import InlineKeyboardMarkup
+
+        teacher_user.telegram_chat_id = 700001
+        teacher_user.save(update_fields=['telegram_chat_id'])
+
+        message = AsyncMock()
+        message.chat = MagicMock()
+        message.chat.id = 700001
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(start_handler(message))
+
+        message.answer.assert_called_once()
+        kb = message.answer.call_args.kwargs['reply_markup']
+        assert isinstance(kb, InlineKeyboardMarkup)
+        text = message.answer.call_args.args[0]
+        assert "Tilni tanlang" in text
+
+    def test_unlinked_boss_sees_language_picker(self, boss):
+        from apps.telegram_bot.handlers import start_handler
+        from aiogram.types import InlineKeyboardMarkup
+
+        message = AsyncMock()
+        message.chat = MagicMock()
+        message.chat.id = 700002
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(start_handler(message))
+
+        message.answer.assert_called_once()
+        kb = message.answer.call_args.kwargs['reply_markup']
+        assert isinstance(kb, InlineKeyboardMarkup)
+        text = message.answer.call_args.args[0]
+        assert "Tilni tanlang" in text
+
+    def test_linked_boss_without_cached_language_still_sees_picker(self, boss):
+        """A linked boss whose language was never recorded (e.g. cache expired)
+        must not be silently dropped into the boss menu — language choice is
+        only skipped when we know a prior session already selected one."""
+        from apps.telegram_bot.handlers import start_handler
+        from aiogram.types import InlineKeyboardMarkup
+
+        boss.telegram_chat_id = 700003
+        boss.save(update_fields=['telegram_chat_id'])
+
+        message = AsyncMock()
+        message.chat = MagicMock()
+        message.chat.id = 700003
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(start_handler(message))
+
+        text = message.answer.call_args.args[0]
+        kb = message.answer.call_args.kwargs['reply_markup']
+        assert "Tilni tanlang" in text
+        assert isinstance(kb, InlineKeyboardMarkup)
+
+    def test_linked_boss_with_cached_language_goes_straight_to_boss_menu(self, boss):
+        from apps.telegram_bot.handlers import start_handler
+        from aiogram.types import InlineKeyboardMarkup
+        from django.core.cache import cache
+
+        chat_id = 700004
+        boss.telegram_chat_id = chat_id
+        boss.save(update_fields=['telegram_chat_id'])
+        cache.set(f"bot_lang:{chat_id}", "uz", 3600)
+
+        message = AsyncMock()
+        message.chat = MagicMock()
+        message.chat.id = chat_id
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(start_handler(message))
+
+        message.answer.assert_called_once()
+        text = message.answer.call_args.args[0]
+        kb = message.answer.call_args.kwargs['reply_markup']
+        assert "boshqaruv menyusi" in text
+        assert isinstance(kb, InlineKeyboardMarkup)
+        assert kb.inline_keyboard[0][0].callback_data == "boss_reports"
 
 
 # ---------------------------------------------------------------------------
@@ -257,3 +360,233 @@ class TestSendSmsEndpoint:
         }, format='json')
 
         assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Full onboarding: language picker -> contact share -> link -> boss menu
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db(transaction=True)
+class TestBossFullOnboardingFlow:
+    def test_new_boss_goes_through_language_then_contact_then_boss_menu(self, boss):
+        from apps.telegram_bot.handlers import start_handler, language_callback, contact_handler
+        from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
+
+        chat_id = 800001
+        phone = "+998901230001"
+        boss.phone = phone
+        boss.save(update_fields=['phone'])
+
+        message = AsyncMock()
+        message.chat = MagicMock()
+        message.chat.id = chat_id
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(start_handler(message))
+        kb1 = message.answer.call_args.kwargs['reply_markup']
+        assert isinstance(kb1, InlineKeyboardMarkup)
+
+        callback = AsyncMock()
+        callback.data = "lang_uz"
+        callback.from_user = None
+        callback.message.chat.id = chat_id
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(language_callback(callback))
+        kb2 = callback.message.answer.call_args.kwargs['reply_markup']
+        assert isinstance(kb2, ReplyKeyboardMarkup)
+
+        contact_message = _contact_message(phone, chat_id=chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(contact_handler(contact_message))
+
+        boss.refresh_from_db()
+        assert boss.telegram_chat_id == chat_id
+
+        calls = contact_message.answer.call_args_list
+        assert len(calls) == 2
+        assert "muvaffaqiyatli" in calls[0].args[0]
+        boss_menu_kb = calls[1].kwargs['reply_markup']
+        assert isinstance(boss_menu_kb, InlineKeyboardMarkup)
+        assert boss_menu_kb.inline_keyboard[0][0].callback_data == "boss_reports"
+
+
+# ---------------------------------------------------------------------------
+# Hisobotlar entry point + branch picker
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db(transaction=True)
+class TestBossReportsMenu:
+    def _callback(self, chat_id, data=None):
+        cb = AsyncMock()
+        cb.message.chat.id = chat_id
+        cb.data = data
+        return cb
+
+    def test_single_branch_boss_skips_branch_picker(self, boss):
+        from apps.telegram_bot.handlers import boss_reports_callback
+        from aiogram.types import InlineKeyboardMarkup
+
+        chat_id = 800101
+        boss.telegram_chat_id = chat_id
+        boss.save(update_fields=['telegram_chat_id'])
+
+        callback = self._callback(chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(boss_reports_callback(callback))
+
+        callback.message.answer.assert_called_once()
+        text = callback.message.answer.call_args.args[0]
+        kb = callback.message.answer.call_args.kwargs['reply_markup']
+        assert "Hisobotlar" in text
+        callback_datas = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+        assert callback_datas == ["rep_payments", "rep_debts", "rep_groups", "rep_lessons", "rep_salaries"]
+
+    def test_multi_branch_boss_sees_picker_then_selection_persists(self, boss, company):
+        from apps.companies.models import Company
+        from apps.telegram_bot.handlers import boss_reports_callback, branch_select_callback, report_debts_callback
+        from aiogram.types import InlineKeyboardMarkup
+        from django.core.cache import cache
+
+        branch = Company.objects.create(name="Branch B", branch_of=company, status='active')
+
+        chat_id = 800102
+        boss.telegram_chat_id = chat_id
+        boss.save(update_fields=['telegram_chat_id'])
+
+        cb1 = self._callback(chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(boss_reports_callback(cb1))
+        kb1 = cb1.message.answer.call_args.kwargs['reply_markup']
+        assert isinstance(kb1, InlineKeyboardMarkup)
+        names = [btn.text for row in kb1.inline_keyboard for btn in row]
+        assert company.name in names
+        assert branch.name in names
+
+        cb2 = self._callback(chat_id, data=f"branch:{branch.id}")
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(branch_select_callback(cb2))
+        kb2 = cb2.message.answer.call_args.kwargs['reply_markup']
+        callback_datas = [btn.callback_data for row in kb2.inline_keyboard for btn in row]
+        assert "rep_debts" in callback_datas
+        assert cache.get(f"bot_branch:{chat_id}") == str(branch.id)
+
+        # Subsequent sub-menu tap must use the persisted branch — no picker shown again
+        cb3 = self._callback(chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(report_debts_callback(cb3))
+        text3 = cb3.message.answer.call_args.args[0]
+        assert "Qarzdorlar" in text3
+
+    def test_non_boss_chat_id_is_denied(self):
+        from apps.telegram_bot.handlers import boss_reports_callback
+
+        callback = self._callback(999999)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(boss_reports_callback(callback))
+
+        callback.answer.assert_called_once()
+        assert callback.answer.call_args.kwargs.get('show_alert') is True
+
+
+# ---------------------------------------------------------------------------
+# The 5 Hisobotlar sub-sections — correctly scoped + correctly formatted data
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestBossReportSections:
+    def test_today_payments_scoped_and_formatted(self, company, company2, group_student):
+        from apps.payments.models import Payment
+        from apps.telegram_bot.handlers import _get_today_payments, _format_payments
+        import datetime
+
+        today = datetime.date.today()
+        Payment.objects.create(
+            company=company, group_student=group_student,
+            amount=150000, payment_type='cash', paid_at=datetime.datetime.now(),
+        )
+        # A payment in a different company must never leak into this report
+        Payment.objects.create(
+            company=company2, group_student=group_student,
+            amount=999999, payment_type='cash', paid_at=datetime.datetime.now(),
+        )
+
+        rows = _get_today_payments(company, today)
+        assert len(rows) == 1
+        assert rows[0]['amount'] == 150000.0
+        assert rows[0]['name'] == "Student One"
+
+        text = _format_payments(rows, today)
+        assert "150 000 so'm" in text
+        assert "Student One" in text
+
+    def test_debtors_scoped_and_formatted(self, company, company2, debt, group_student):
+        from apps.debts.models import Debt
+        from apps.telegram_bot.handlers import _get_debtors, _format_debts
+
+        Debt.objects.create(
+            company=company2, group_student=group_student,
+            amount=777777, due_date=debt.due_date, status='unpaid',
+        )
+        # A paid debt must not appear in the debtors list
+        Debt.objects.create(
+            company=company, group_student=group_student,
+            amount=111111, due_date=debt.due_date, status='paid',
+        )
+
+        rows = _get_debtors(company)
+        assert len(rows) == 1
+        assert rows[0]['amount'] == 500000.0
+        assert rows[0]['name'] == "Student One"
+
+        text = _format_debts(rows)
+        assert "500 000 so'm" in text
+        assert "Qarzdorlar" in text
+
+    def test_groups_summary_scoped_and_formatted(self, company, group, group_student):
+        from apps.telegram_bot.handlers import _get_groups_summary, _format_groups
+
+        rows = _get_groups_summary(company)
+        assert len(rows) == 1
+        assert rows[0]['name'] == "1A"
+        assert rows[0]['course'] == "Python Course"
+        assert rows[0]['teacher'] == "Teacher User"
+        assert rows[0]['count'] == 1  # group_student fixture defaults to status='trial'
+
+        text = _format_groups(rows)
+        assert "1A" in text
+        assert "Python Course" in text
+        assert "1 talaba" in text
+
+    def test_today_lessons_grouped_by_status_and_formatted(self, group, teacher):
+        from apps.lessons.models import Lesson
+        from apps.telegram_bot.handlers import _get_today_lessons, _format_lessons
+        import datetime
+
+        today = datetime.date.today()
+        now = datetime.datetime.now()
+        Lesson.objects.create(group=group, teacher=teacher, topic="Topic A", date=today, status='finished', started_at=now)
+        Lesson.objects.create(group=group, teacher=teacher, topic="Topic B", date=today, status='ongoing', started_at=now)
+
+        rows = _get_today_lessons(group.company, today)
+        assert len(rows) == 2
+        statuses = {r['status'] for r in rows}
+        assert statuses == {'finished', 'ongoing'}
+
+        text = _format_lessons(rows, today)
+        assert "Tugallangan" in text
+        assert "Jarayonda" in text
+        assert "Boshlanmagan" not in text  # no pending lessons today
+
+    def test_salaries_scoped_and_formatted(self, company, teacher):
+        from apps.telegram_bot.handlers import _get_boss_salaries, _format_salaries
+        import datetime
+
+        month = datetime.date.today().replace(day=1)
+        rows = _get_boss_salaries(company, month)
+
+        assert len(rows) == 1
+        assert rows[0]['name'] == "Teacher User"
+        assert rows[0]['total'] == 2000000.0  # fixed_amount, no debt lookup
+
+        text = _format_salaries(rows, "Iyun 2026")
+        assert "Teacher User" in text
+        assert "2 000 000 so'm" in text
