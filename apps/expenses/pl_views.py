@@ -159,7 +159,7 @@ class ProfitLossView(APIView):
 
             debts_qs = Debt.objects.filter(**cf, status__in=['unpaid', 'partial', 'overdue'])
             stats = {
-                'total_leads':       Lead.objects.filter(**cf).count(),
+                'total_leads':       Lead.objects.filter(**cf, status='pending').count(),
                 'active_students':   Student.objects.filter(**cf, status='active').count(),
                 'active_teachers':   Teacher.objects.filter(**cf, status='active').count(),
                 'active_groups':     Group.objects.filter(**cf, status='active').count(),
