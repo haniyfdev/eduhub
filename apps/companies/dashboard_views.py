@@ -17,6 +17,7 @@ class DashboardSummaryView(APIView):
         from apps.payments.models import Payment
         from apps.debts.models import Debt
         from apps.teachers.models import Teacher
+        from apps.leads.models import Lead
 
         company = get_active_company(request)
         today = date.today()
@@ -44,6 +45,7 @@ class DashboardSummaryView(APIView):
             'total_debtors': debt_stats['total_debtors'] or 0,
             'total_debt_amount': debt_stats['total_debt_amount'] or Decimal('0'),
             'teachers_count': Teacher.objects.filter(company=company, status='active').count(),
+            'pending_leads': Lead.objects.filter(company=company, status='pending').count(),
         })
 
 
