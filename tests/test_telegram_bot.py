@@ -556,25 +556,73 @@ class TestBossReportSections:
         assert "Python Course" in text
         assert "1 talaba" in text
 
-    def test_today_lessons_grouped_by_status_and_formatted(self, group, teacher):
+    def test_today_lessons_includes_pending_groups_with_no_lesson_row_and_correct_local_time(
+        self, company, course, teacher, room
+    ):
+        """Mirrors GroupViewSet.today: every active group scheduled for today
+        must show up — finished/ongoing (has a Lesson row) AND pending (no
+        Lesson row yet, just scheduled). A group scheduled on a different
+        weekday must never appear. started_at must be converted from the
+        stored UTC value to local time (Asia/Tashkent, UTC+5), not shown raw."""
+        from apps.groups.models import Group
         from apps.lessons.models import Lesson
-        from apps.telegram_bot.handlers import _get_today_lessons, _format_lessons
+        from apps.telegram_bot.handlers import _get_today_lessons, _format_lessons, _DAY_MAP
+        from django.utils import timezone as dj_timezone
         import datetime
 
         today = datetime.date.today()
-        now = datetime.datetime.now()
-        Lesson.objects.create(group=group, teacher=teacher, topic="Topic A", date=today, status='finished', started_at=now)
-        Lesson.objects.create(group=group, teacher=teacher, topic="Topic B", date=today, status='ongoing', started_at=now)
+        variant = _DAY_MAP[today.weekday()][0]
+        other_variant = _DAY_MAP[(today.weekday() + 1) % 7][0]
 
-        rows = _get_today_lessons(group.company, today)
-        assert len(rows) == 2
-        statuses = {r['status'] for r in rows}
-        assert statuses == {'finished', 'ongoing'}
+        group_finished = Group.objects.create(
+            company=company, course=course, teacher=teacher, room=room,
+            number=10, gender_type='a', status='active', schedule=f"{variant} 10:00-11:30",
+        )
+        group_ongoing = Group.objects.create(
+            company=company, course=course, teacher=teacher, room=room,
+            number=11, gender_type='a', status='active', schedule=f"{variant} 10:00-11:30",
+        )
+        group_pending = Group.objects.create(
+            company=company, course=course, teacher=teacher, room=room,
+            number=12, gender_type='a', status='active', schedule=f"{variant} 10:00-11:30",
+        )
+        # Scheduled on a different weekday — must never appear in today's report
+        Group.objects.create(
+            company=company, course=course, teacher=teacher, room=room,
+            number=13, gender_type='a', status='active', schedule=f"{other_variant} 09:00-10:00",
+        )
+
+        # Stored as 06:20 UTC — the web dashboard shows this same value as
+        # 11:20 local (Asia/Tashkent, UTC+5); the bot must match it exactly.
+        started_at_utc = dj_timezone.make_aware(
+            datetime.datetime(today.year, today.month, today.day, 6, 20), datetime.timezone.utc
+        )
+        Lesson.objects.create(
+            group=group_finished, teacher=teacher, topic="T1", date=today,
+            status='finished', started_at=started_at_utc,
+        )
+        Lesson.objects.create(
+            group=group_ongoing, teacher=teacher, topic="T2", date=today,
+            status='ongoing', started_at=started_at_utc,
+        )
+        # group_pending intentionally has no Lesson row at all
+
+        rows = _get_today_lessons(company, today)
+        by_group = {r['group']: r for r in rows}
+
+        assert "13A" not in by_group
+        assert by_group["10A"]['status'] == 'finished'
+        assert by_group["10A"]['started_at'] == "11:20"
+        assert by_group["11A"]['status'] == 'ongoing'
+        assert by_group["12A"]['status'] == 'pending'
+        assert by_group["12A"]['started_at'] is None
 
         text = _format_lessons(rows, today)
         assert "Tugallangan" in text
         assert "Jarayonda" in text
-        assert "Boshlanmagan" not in text  # no pending lessons today
+        assert "Boshlanmagan" in text
+        assert "11:20" in text
+        assert "06:20" not in text
 
     def test_salaries_scoped_and_formatted(self, company, teacher):
         from apps.telegram_bot.handlers import _get_boss_salaries, _format_salaries
@@ -590,3 +638,106 @@ class TestBossReportSections:
         text = _format_salaries(rows, "Iyun 2026")
         assert "Teacher User" in text
         assert "2 000 000 so'm" in text
+
+    def test_payment_name_with_html_special_chars_is_escaped(self, company, group_student):
+        """Telegram's HTML parse_mode treats &, < and > as special. A raw
+        student name containing them would either break the message or get
+        silently mangled — they must come through escaped."""
+        from apps.payments.models import Payment
+        from apps.telegram_bot.handlers import _get_today_payments, _format_payments
+        import datetime
+
+        group_student.student.first_name = "Tom & Jerry"
+        group_student.student.last_name = "<King>"
+        group_student.student.save(update_fields=['first_name', 'last_name'])
+
+        today = datetime.date.today()
+        Payment.objects.create(
+            company=company, group_student=group_student,
+            amount=100000, payment_type='cash', paid_at=datetime.datetime.now(),
+        )
+
+        rows = _get_today_payments(company, today)
+        text = _format_payments(rows, today)
+
+        assert "<King>" not in text
+        assert "Tom & Jerry" not in text
+        assert "&amp;" in text
+        assert "&lt;King&gt;" in text
+
+
+# ---------------------------------------------------------------------------
+# Navigation: the report sub-menu must reappear under every report message
+# so the boss can jump straight to another section
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db(transaction=True)
+class TestBossReportNavigation:
+    def _callback(self, chat_id):
+        cb = AsyncMock()
+        cb.message.chat.id = chat_id
+        return cb
+
+    def _setup_single_branch_boss(self, boss, chat_id):
+        boss.telegram_chat_id = chat_id
+        boss.save(update_fields=['telegram_chat_id'])
+
+    def _assert_reports_kb_attached(self, callback):
+        from aiogram.types import InlineKeyboardMarkup
+
+        kb = callback.message.answer.call_args.kwargs.get('reply_markup')
+        assert isinstance(kb, InlineKeyboardMarkup)
+        callback_datas = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+        assert callback_datas == ["rep_payments", "rep_debts", "rep_groups", "rep_lessons", "rep_salaries"]
+
+    def test_payments_report_reattaches_navigation_menu(self, boss):
+        from apps.telegram_bot.handlers import report_payments_callback
+
+        chat_id = 820001
+        self._setup_single_branch_boss(boss, chat_id)
+        callback = self._callback(chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(report_payments_callback(callback))
+        self._assert_reports_kb_attached(callback)
+
+    def test_debts_report_reattaches_navigation_menu(self, boss):
+        from apps.telegram_bot.handlers import report_debts_callback
+
+        chat_id = 820002
+        self._setup_single_branch_boss(boss, chat_id)
+        callback = self._callback(chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(report_debts_callback(callback))
+        self._assert_reports_kb_attached(callback)
+
+    def test_groups_report_reattaches_navigation_menu(self, boss):
+        from apps.telegram_bot.handlers import report_groups_callback
+
+        chat_id = 820003
+        self._setup_single_branch_boss(boss, chat_id)
+        callback = self._callback(chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(report_groups_callback(callback))
+        self._assert_reports_kb_attached(callback)
+
+    def test_lessons_report_reattaches_navigation_menu(self, boss):
+        from apps.telegram_bot.handlers import report_lessons_callback
+
+        chat_id = 820004
+        self._setup_single_branch_boss(boss, chat_id)
+        callback = self._callback(chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(report_lessons_callback(callback))
+        self._assert_reports_kb_attached(callback)
+
+    def test_salaries_report_reattaches_navigation_menu(self, boss):
+        from apps.telegram_bot.handlers import report_salaries_callback
+
+        chat_id = 820005
+        self._setup_single_branch_boss(boss, chat_id)
+        callback = self._callback(chat_id)
+        with patch('asgiref.sync.sync_to_async', _fake_sync_to_async):
+            run(report_salaries_callback(callback))
+        # report_salaries_callback sends an interim "hisoblanmoqda" message
+        # first — the nav menu must be on the FINAL message, not that one.
+        self._assert_reports_kb_attached(callback)

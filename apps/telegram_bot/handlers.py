@@ -1,4 +1,5 @@
 import datetime
+import html
 import re
 
 from aiogram import F, Router
@@ -74,11 +75,36 @@ _LESSON_STATUS_LABELS = {
     'pending':  "Boshlanmagan",
 }
 
+_LESSON_STATUS_EMOJI = {
+    'finished': '✅',
+    'ongoing':  '🟡',
+    'pending':  '⏳',
+}
+
+# Mirrors GroupViewSet.today's day-of-week matching (apps/groups/views.py) —
+# duplicated here since that logic lives inside a DRF view method, not an
+# importable function, and this is a bot-only change.
+_DAY_MAP = {
+    0: ['Du', 'Dushanba'],
+    1: ['Se', 'Seshanba'],
+    2: ['Ch', 'Cho', 'Chorshanba'],
+    3: ['Pa', 'Payshanba'],
+    4: ['Ju', 'Juma'],
+    5: ['Sh', 'Sha', 'Shanba'],
+    6: ['Ya', 'Yakshanba'],
+}
+
 _BRANCH_CACHE_TTL = 365 * 24 * 3600
 
 
 def _fmt_money(value) -> str:
     return f"{int(value):,}".replace(',', ' ')
+
+
+def _esc(value) -> str:
+    """Escapes &, < and > for Telegram HTML parse_mode — the only characters
+    that mode treats as special, unlike MarkdownV2's much larger escape set."""
+    return html.escape(str(value), quote=False)
 
 
 # ── Boss menu ──────────────────────────────────────────────────────────────
@@ -271,23 +297,49 @@ def _get_groups_summary(company):
 
 
 def _get_today_lessons(company, today):
+    """Every active group scheduled for today, like GroupViewSet.today —
+    not just groups that already have a Lesson row. A group with no Lesson
+    row yet is still 'pending' (hasn't started), exactly as the web
+    dashboard's Bugungi darslar table treats it."""
+    from django.db.models import Q
+    from django.utils import timezone as dj_timezone
+    from apps.groups.models import Group
     from apps.lessons.models import Lesson
 
-    qs = (
-        Lesson.objects
-        .filter(group__company=company, date=today)
-        .select_related('group', 'teacher__user')
-        .order_by('group__number')
+    day_variants = _DAY_MAP[today.weekday()]
+    day_filter = Q()
+    for variant in day_variants:
+        day_filter |= Q(schedule__icontains=variant)
+
+    groups = (
+        Group.objects
+        .filter(company=company, status='active')
+        .filter(day_filter)
+        .select_related('teacher__user')
+        .order_by('start_time')
     )
-    return [
-        {
-            'group':      f"{l.group.number}{(l.group.gender_type or '').upper()}",
-            'teacher':    l.teacher.user.get_full_name() if l.teacher and l.teacher.user else '—',
-            'status':     l.status,
-            'started_at': l.started_at.strftime('%H:%M') if l.started_at else None,
-        }
-        for l in qs
-    ]
+
+    lessons_by_group = {
+        l.group_id: l
+        for l in Lesson.objects.filter(group__company=company, date=today)
+    }
+
+    rows = []
+    for g in groups:
+        lesson = lessons_by_group.get(g.id)
+        started_at = None
+        if lesson and lesson.started_at:
+            # started_at is stored UTC (USE_TZ=True) — convert to the active
+            # timezone before formatting, same as DRF does when serializing
+            # for the web dashboard. A bare .strftime() would show raw UTC.
+            started_at = dj_timezone.localtime(lesson.started_at).strftime('%H:%M')
+        rows.append({
+            'group':      f"{g.number}{(g.gender_type or '').upper()}",
+            'teacher':    g.teacher.user.get_full_name() if g.teacher and g.teacher.user else '—',
+            'status':     lesson.status if lesson else 'pending',
+            'started_at': started_at,
+        })
+    return rows
 
 
 # ── Formatters ───────────────────────────────────────────────────────────────
@@ -295,67 +347,71 @@ def _get_today_lessons(company, today):
 def _format_salaries(rows, month_label):
     if not rows:
         return f"💵 <b>Maoshlar — {month_label}</b>\n\nBu oy uchun hisoblangan maosh yo'q."
-    lines = [f"💵 <b>Maoshlar — {month_label}</b>\n"]
+    blocks = [f"💵 <b>Maoshlar — {month_label}</b>"]
     for r in rows:
-        lines.append(f"• {r['name']} — {_fmt_money(r['total'])} so'm")
+        blocks.append(f"• <b>{_esc(r['name'])}</b> — {_fmt_money(r['total'])} so'm")
     total = sum(r['total'] for r in rows)
-    lines.append(f"\n<b>Jami: {_fmt_money(total)} so'm</b>")
-    return "\n".join(lines)
+    blocks.append(f"<b>Jami:</b> {_fmt_money(total)} so'm")
+    return "\n\n".join(blocks)
 
 
 def _format_payments(rows, today):
     label = today.strftime('%d.%m.%Y')
     if not rows:
         return f"💰 <b>Bugungi to'lovlar — {label}</b>\n\nBugun hali to'lov bo'lmadi."
-    lines = [f"💰 <b>Bugungi to'lovlar — {label}</b>\n"]
+    blocks = [f"💰 <b>Bugungi to'lovlar — {label}</b>"]
     for r in rows:
-        lines.append(f"• {r['name']} — {_fmt_money(r['amount'])} so'm ({r['time']})")
+        blocks.append(f"• <b>{_esc(r['name'])}</b> — {_fmt_money(r['amount'])} so'm ({r['time']})")
     total = sum(r['amount'] for r in rows)
-    lines.append(f"\n<b>Jami: {_fmt_money(total)} so'm</b>")
-    lines.append(
-        "\nUzoqroq davr (hafta, 10-20 kun) uchun veb-saytdagi boshqaruv panelini "
+    blocks.append(f"<b>Jami:</b> {_fmt_money(total)} so'm")
+    blocks.append(
+        "Uzoqroq davr (hafta, 10-20 kun) uchun veb-saytdagi boshqaruv panelini "
         "tekshiring — bot faqat bugungi ma'lumotni ko'rsatadi."
     )
-    return "\n".join(lines)
+    return "\n\n".join(blocks)
 
 
 def _format_debts(rows):
     if not rows:
         return "⚠️ <b>Qarzdorlar</b>\n\nHozircha qarzdorlik yo'q."
-    lines = [f"⚠️ <b>Qarzdorlar</b> ({len(rows)})\n"]
+    blocks = [f"⚠️ <b>Qarzdorlar</b> ({len(rows)})"]
     for r in rows:
-        lines.append(f"• {r['name']} — {_fmt_money(r['amount'])} so'm (muddati: {r['due_date']})")
+        blocks.append(f"• <b>{_esc(r['name'])}</b> — {_fmt_money(r['amount'])} so'm (muddati: {r['due_date']})")
     total = sum(r['amount'] for r in rows)
-    lines.append(f"\n<b>Jami qarz: {_fmt_money(total)} so'm</b>")
-    return "\n".join(lines)
+    blocks.append(f"<b>Jami qarz:</b> {_fmt_money(total)} so'm")
+    return "\n\n".join(blocks)
 
 
 def _format_groups(rows):
     if not rows:
         return "👥 <b>Guruhlar</b>\n\nFaol guruhlar topilmadi."
-    lines = [f"👥 <b>Guruhlar</b> ({len(rows)})\n"]
+    blocks = [f"👥 <b>Guruhlar</b> ({len(rows)})"]
     for r in rows:
-        lines.append(f"• {r['name']} — {r['course']} — {r['teacher']} — {r['count']} talaba")
-    return "\n".join(lines)
+        blocks.append(
+            f"• <b>{_esc(r['name'])}</b> — {_esc(r['course'])} — "
+            f"{_esc(r['teacher'])} — {r['count']} talaba"
+        )
+    return "\n\n".join(blocks)
 
 
 def _format_lessons(rows, today):
     label = today.strftime('%d.%m.%Y')
     if not rows:
-        return f"📚 <b>Bugungi darslar — {label}</b>\n\nBugunga darslar topilmadi."
+        return f"📚 <b>Bugungi darslar — {label}</b>\n\nBugun rejalashtirilgan darslar topilmadi."
     by_status: dict[str, list] = {'finished': [], 'ongoing': [], 'pending': []}
     for r in rows:
         by_status.setdefault(r['status'], []).append(r)
-    lines = [f"📚 <b>Bugungi darslar — {label}</b>"]
+    blocks = [f"📚 <b>Bugungi darslar — {label}</b>"]
     for status_key in ('finished', 'ongoing', 'pending'):
         group_rows = by_status.get(status_key, [])
         if not group_rows:
             continue
-        lines.append(f"\n<b>{_LESSON_STATUS_LABELS[status_key]}</b>")
+        emoji = _LESSON_STATUS_EMOJI[status_key]
+        blocks.append(f"{emoji} <b>{_LESSON_STATUS_LABELS[status_key]}</b>")
         for r in group_rows:
             time_part = f" ({r['started_at']})" if r['started_at'] else ""
-            lines.append(f"• {r['group']} — {r['teacher']}{time_part}")
-    return "\n".join(lines)
+            blocks.append(f"• <b>{_esc(r['group'])}</b> — {_esc(r['teacher'])}{time_part}")
+    return "\n\n".join(blocks)
 
 
 # ── /start ─────────────────────────────────────────────────────────────────
@@ -538,7 +594,9 @@ async def report_payments_callback(callback: CallbackQuery) -> None:
 
     today = datetime.date.today()
     rows = await sync_to_async(_get_today_payments)(company, today)
-    await callback.message.answer(_format_payments(rows, today), parse_mode="HTML")
+    await callback.message.answer(
+        _format_payments(rows, today), parse_mode="HTML", reply_markup=_reports_menu_kb()
+    )
 
 
 @router.callback_query(F.data == "rep_debts")
@@ -550,7 +608,9 @@ async def report_debts_callback(callback: CallbackQuery) -> None:
         return
 
     rows = await sync_to_async(_get_debtors)(company)
-    await callback.message.answer(_format_debts(rows), parse_mode="HTML")
+    await callback.message.answer(
+        _format_debts(rows), parse_mode="HTML", reply_markup=_reports_menu_kb()
+    )
 
 
 @router.callback_query(F.data == "rep_groups")
@@ -562,7 +622,9 @@ async def report_groups_callback(callback: CallbackQuery) -> None:
         return
 
     rows = await sync_to_async(_get_groups_summary)(company)
-    await callback.message.answer(_format_groups(rows), parse_mode="HTML")
+    await callback.message.answer(
+        _format_groups(rows), parse_mode="HTML", reply_markup=_reports_menu_kb()
+    )
 
 
 @router.callback_query(F.data == "rep_lessons")
@@ -575,7 +637,9 @@ async def report_lessons_callback(callback: CallbackQuery) -> None:
 
     today = datetime.date.today()
     rows = await sync_to_async(_get_today_lessons)(company, today)
-    await callback.message.answer(_format_lessons(rows, today), parse_mode="HTML")
+    await callback.message.answer(
+        _format_lessons(rows, today), parse_mode="HTML", reply_markup=_reports_menu_kb()
+    )
 
 
 @router.callback_query(F.data == "rep_salaries")
@@ -590,4 +654,6 @@ async def report_salaries_callback(callback: CallbackQuery) -> None:
     month = datetime.date.today().replace(day=1)
     month_label = f"{_UZ_MONTHS[month.month]} {month.year}"
     rows = await sync_to_async(_get_boss_salaries)(company, month)
-    await callback.message.answer(_format_salaries(rows, month_label), parse_mode="HTML")
+    await callback.message.answer(
+        _format_salaries(rows, month_label), parse_mode="HTML", reply_markup=_reports_menu_kb()
+    )
