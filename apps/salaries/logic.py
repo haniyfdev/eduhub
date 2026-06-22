@@ -39,6 +39,7 @@ def calculate_teacher_salary(teacher, month):
     from .models import TeacherSalary
     from apps.groups.models import Group
     from apps.debts.models import Debt
+    from apps.payments.models import Payment
     from django.db.models import Sum
 
     if teacher.status == 'frozen':
@@ -137,7 +138,21 @@ def calculate_teacher_salary(teacher, month):
             Q(billing_month__year=month.year, billing_month__month=month.month) |
             Q(billing_month__isnull=True, due_date__year=month.year, due_date__month=month.month)
         ).aggregate(total=Sum('amount'))
-        group_debt_sum = Decimal(str(agg['total'] or 0))
+        remaining_debt_sum = Decimal(str(agg['total'] or 0))
+
+        # Debt.amount is drawn down to 0 as a student pays (see payments/serializers.py),
+        # but salary must not depend on payment status (Rule 9: "the teacher did the
+        # work regardless of whether the student paid"). Add back this month's payments
+        # so paid-off debts still count at their original invoiced amount.
+        paid_agg = Payment.objects.filter(
+            group_student__group=group,
+            company=teacher.company,
+            paid_at__year=month.year,
+            paid_at__month=month.month,
+        ).aggregate(total=Sum('amount'))
+        payments_this_month = Decimal(str(paid_agg['total'] or 0))
+
+        group_debt_sum = remaining_debt_sum + payments_this_month
 
         if teacher.salary_type == 'percent':
             coefficient = (teacher.salary_percent or Decimal('0')) / 100
