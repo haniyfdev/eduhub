@@ -11,6 +11,7 @@ urlpatterns = [
     path('lessons/', include('apps.lessons.urls')),
     path('payments/', include('apps.payments.urls')),
     path('debts/', include('apps.debts.urls')),
+    path('refunds/', include('apps.refunds.urls')),
     path('discounts/', include('apps.discounts.urls')),
     path('sms-templates/', include('apps.notifications.sms_urls')),
     path('awards/', include('apps.awards.urls')),

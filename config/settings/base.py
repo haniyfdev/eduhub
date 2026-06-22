@@ -55,6 +55,7 @@ LOCAL_APPS = [
     'apps.sms',
     'apps.telegram_bot',
     'apps.scheduler',
+    'apps.refunds',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

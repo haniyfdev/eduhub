@@ -16,6 +16,18 @@ from apps.staff.models import StaffSalary as StaffMemberSalary
 from .models import Expense
 
 
+def _refund_total(cf, from_date, to_date, **extra_filters):
+    """Confirmed-or-paid refund amount in range — revenue drops at confirmed_at
+    time (when the admin confirms the amount), not at paid_at time."""
+    from apps.refunds.models import Refund
+    return Refund.objects.filter(
+        **cf, **extra_filters,
+        status__in=['confirmed', 'paid'],
+        confirmed_at__date__gte=from_date,
+        confirmed_at__date__lte=to_date,
+    ).aggregate(t=Sum('refund_amount'))['t'] or Decimal('0')
+
+
 def _parse_date_range(request):
     today = date.today()
 
@@ -97,6 +109,7 @@ class ProfitLossView(APIView):
             total_income = Payment.objects.filter(
                 **cf, paid_at__date__gte=from_date, paid_at__date__lte=to_date
             ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+            total_income -= _refund_total(cf, from_date, to_date)
 
             teacher_paid, staff_paid = _salary_totals(cf)
 
@@ -217,6 +230,7 @@ class ProfitLossHistoryView(APIView):
                 income = Payment.objects.filter(
                     **cf, paid_at__date=current,
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+                income -= _refund_total(cf, current, current)
 
                 teacher_m = TeacherSalary.objects.filter(
                     **cf, paid_at__date=current, paid_amount__gt=0,
@@ -251,6 +265,7 @@ class ProfitLossHistoryView(APIView):
                 income = Payment.objects.filter(
                     **cf, paid_at__date__gte=month_from, paid_at__date__lte=month_to,
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+                income -= _refund_total(cf, month_from, month_to)
 
                 teacher_m = TeacherSalary.objects.filter(
                     **cf,
@@ -303,6 +318,7 @@ class ProfitLossTeachersView(APIView):
                     **cf, group_student__group__teacher=teacher,
                     paid_at__date__gte=from_date, paid_at__date__lte=to_date,
                 ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+                revenue -= _refund_total(cf, from_date, to_date, group_student__group__teacher=teacher)
 
                 salary = TeacherSalary.objects.filter(
                     teacher=teacher,

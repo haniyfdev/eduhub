@@ -11,6 +11,8 @@ class PaymentSerializer(serializers.ModelSerializer):
     student_phone = serializers.CharField(source='group_student.student.phone', read_only=True)
     course_name = serializers.CharField(source='group_student.group.course.name', read_only=True)
     group_display = serializers.SerializerMethodField()
+    refund_candidate = serializers.SerializerMethodField()
+    refund_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
@@ -19,6 +21,7 @@ class PaymentSerializer(serializers.ModelSerializer):
             'student_id', 'student_name', 'student_phone',
             'group_display', 'course_name',
             'discount', 'amount', 'payment_type', 'note', 'paid_at',
+            'refund_candidate', 'refund_status',
         )
         read_only_fields = ('id', 'company', 'paid_at')
 
@@ -29,6 +32,26 @@ class PaymentSerializer(serializers.ModelSerializer):
     def get_group_display(self, obj):
         g = obj.group_student.group
         return f"{g.number}{(g.gender_type or '').upper()}"
+
+    def _existing_refund(self, obj):
+        # Cache per-instance — get_refund_candidate_info() and refund_status
+        # both need this, and a row is rendered through both fields.
+        if not hasattr(obj, '_refund_cache'):
+            from apps.refunds.models import Refund
+            obj._refund_cache = Refund.objects.filter(group_student=obj.group_student).first()
+        return obj._refund_cache
+
+    def get_refund_candidate(self, obj):
+        if obj.group_student.status != 'left':
+            return False
+        if self._existing_refund(obj) is not None:
+            return False
+        from apps.refunds.services import get_refund_candidate_info
+        return get_refund_candidate_info(obj.group_student) is not None
+
+    def get_refund_status(self, obj):
+        refund = self._existing_refund(obj)
+        return refund.status if refund else None
 
 
 class PaymentCreateSerializer(serializers.Serializer):

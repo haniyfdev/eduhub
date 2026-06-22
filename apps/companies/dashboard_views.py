@@ -18,6 +18,7 @@ class DashboardSummaryView(APIView):
         from apps.debts.models import Debt
         from apps.teachers.models import Teacher
         from apps.leads.models import Lead
+        from apps.refunds.models import Refund
 
         company = get_active_company(request)
         today = date.today()
@@ -28,6 +29,12 @@ class DashboardSummaryView(APIView):
         monthly_revenue = Payment.objects.filter(
             company=company, paid_at__year=today.year, paid_at__month=today.month
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        # Revenue drops at confirmed_at time (when the admin confirms the
+        # refund amount), not at paid_at time — see apps/refunds.
+        monthly_revenue -= Refund.objects.filter(
+            company=company, status__in=['confirmed', 'paid'],
+            confirmed_at__year=today.year, confirmed_at__month=today.month,
+        ).aggregate(total=Sum('refund_amount'))['total'] or Decimal('0')
 
         debt_stats = Debt.objects.filter(company=company).aggregate(
             total_debtors=Count('id', filter=~Q(status='paid')),
