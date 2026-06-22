@@ -228,6 +228,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
         from apps.groups.models import GroupStudent
         from apps.debts.models import Debt
         from apps.payments.models import Payment
+        from apps.refunds.models import Refund
 
         if not group or salary_type not in ('percent', 'per_student'):
             return []
@@ -254,7 +255,11 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             paid = Payment.objects.filter(
                 group_student=gs, paid_at__year=month.year, paid_at__month=month.month,
             ).aggregate(total=Sum('amount'))['total'] or 0
-            original_amount = float(remaining) + float(paid)
+            refunded = Refund.objects.filter(
+                group_student=gs, status__in=['confirmed', 'paid'],
+                confirmed_at__year=month.year, confirmed_at__month=month.month,
+            ).aggregate(total=Sum('refund_amount'))['total'] or 0
+            original_amount = float(remaining) + float(paid) - float(refunded)
             if original_amount <= 0:
                 continue
             archived_students.append({
