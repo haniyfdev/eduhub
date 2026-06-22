@@ -12,6 +12,7 @@ def get_refund_candidate_info(gs):
     Shared by RefundViewSet.candidates and PaymentSerializer's
     refund_candidate flag, so both surfaces agree on the same numbers.
     """
+    from apps.companies.models import CompanySettings
     from apps.debts.models import Debt
     from apps.debts.services import compute_billing_breakdown
     from apps.payments.models import Payment
@@ -34,14 +35,29 @@ def get_refund_candidate_info(gs):
     if total_paid <= 0:
         return None
 
-    billing_type = gs.archive_billing_type or 'manual'
+    stored_billing_type = gs.archive_billing_type or 'manual'
+    billing_type = stored_billing_type
+    if stored_billing_type == 'manual':
+        # The archive_billing_type snapshot on GroupStudent is taken once,
+        # at the moment the student leaves — if the company has since
+        # corrected its setting (or it was captured wrong at the time),
+        # the snapshot goes stale. Fall back to the company's CURRENT
+        # setting unless it's also 'manual' (genuinely admin-judgment).
+        company_settings, _ = CompanySettings.objects.get_or_create(company=gs.group.company)
+        if company_settings.archive_billing_type != 'manual':
+            billing_type = company_settings.archive_billing_type
+
     breakdown = None
+    course_price = None
+    total_lessons = None
+    attended_lessons = None
+    per_lesson_price = None
 
     if billing_type == 'manual':
         earned_amount = None
         refund_amount = None
     else:
-        breakdown = compute_billing_breakdown(gs, debt)
+        breakdown = compute_billing_breakdown(gs, debt, billing_type_override=billing_type)
         breakdown.pop('month_start', None)
         breakdown.pop('end_date', None)
         earned_amount = Decimal(str(breakdown['calculated_amount'] or 0))
@@ -49,11 +65,20 @@ def get_refund_candidate_info(gs):
         if refund_amount <= 0:
             return None
 
+        course_price = breakdown['course_price']
+        total_lessons = breakdown['total_units']
+        attended_lessons = breakdown['units_count']
+        per_lesson_price = breakdown['per_unit']
+
     return {
-        'debt':          debt,
-        'total_paid':    total_paid,
-        'earned_amount': earned_amount,
-        'refund_amount': refund_amount,
-        'billing_type':  billing_type,
-        'breakdown':     breakdown,
+        'debt':             debt,
+        'total_paid':       total_paid,
+        'earned_amount':    earned_amount,
+        'refund_amount':    refund_amount,
+        'billing_type':     billing_type,
+        'breakdown':        breakdown,
+        'course_price':     course_price,
+        'total_lessons':    total_lessons,
+        'attended_lessons': attended_lessons,
+        'per_lesson_price': per_lesson_price,
     }

@@ -75,6 +75,10 @@ class RefundViewSet(
                 'debt_id':          str(debt.id) if debt else None,
                 'billing_type':     info['billing_type'],
                 'breakdown':        info['breakdown'],
+                'course_price':     float(info['course_price']) if info['course_price'] is not None else None,
+                'total_lessons':    info['total_lessons'],
+                'attended_lessons': info['attended_lessons'],
+                'per_lesson_price': float(info['per_lesson_price']) if info['per_lesson_price'] is not None else None,
             })
 
         return Response(results)

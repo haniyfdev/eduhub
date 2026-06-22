@@ -1,12 +1,17 @@
 from decimal import Decimal, ROUND_HALF_UP, ROUND_FLOOR
 
 
-def compute_billing_breakdown(gs, debt=None):
+def compute_billing_breakdown(gs, debt=None, billing_type_override=None):
     """Attendance/day breakdown + prorated calculated_amount for a GroupStudent.
 
     Shared by DebtViewSet.last_month_attendance (the existing Sobiq debt
     confirmation flow) and the refund-candidate detection endpoint, so both
     use identical proration math.
+
+    billing_type_override lets a caller force a specific billing type
+    instead of the inferred one — used by the refund flow when the stored
+    archive_billing_type snapshot is known to be stale (see
+    apps.refunds.services.get_refund_candidate_info).
     """
     from apps.attendance.models import Attendance
     from apps.lessons.models import Lesson
@@ -19,10 +24,10 @@ def compute_billing_breakdown(gs, debt=None):
         from django.utils import timezone as tz
         end_date = tz.now().date()
         company_settings, _ = CompanySettings.objects.get_or_create(company=gs.group.company)
-        billing_type = (debt.billing_type if debt else None) or company_settings.freeze_billing_type
+        billing_type = billing_type_override or (debt.billing_type if debt else None) or company_settings.freeze_billing_type
     else:
         end_date     = gs.left_at.date()
-        billing_type = (debt.billing_type if debt else None) or gs.archive_billing_type or 'manual'
+        billing_type = billing_type_override or (debt.billing_type if debt else None) or gs.archive_billing_type or 'manual'
 
     joined_at       = gs.joined_at.date()
     month_start     = end_date.replace(day=1)
