@@ -40,6 +40,7 @@ def calculate_teacher_salary(teacher, month):
     from apps.groups.models import Group
     from apps.debts.models import Debt
     from apps.payments.models import Payment
+    from apps.refunds.models import Refund
     from django.db.models import Sum
 
     if teacher.status == 'frozen':
@@ -152,7 +153,18 @@ def calculate_teacher_salary(teacher, month):
         ).aggregate(total=Sum('amount'))
         payments_this_month = Decimal(str(paid_agg['total'] or 0))
 
-        group_debt_sum = remaining_debt_sum + payments_this_month
+        # Confirmed/paid refunds hand back part of what a student paid —
+        # that portion never became real revenue, so it must not count
+        # toward the teacher's percentage/per_student base either.
+        refund_agg = Refund.objects.filter(
+            group_student__group=group,
+            status__in=['confirmed', 'paid'],
+            confirmed_at__year=month.year,
+            confirmed_at__month=month.month,
+        ).aggregate(total=Sum('refund_amount'))
+        refund_deduction = Decimal(str(refund_agg['total'] or 0))
+
+        group_debt_sum = remaining_debt_sum + payments_this_month - refund_deduction
 
         if teacher.salary_type == 'percent':
             coefficient = (teacher.salary_percent or Decimal('0')) / 100
