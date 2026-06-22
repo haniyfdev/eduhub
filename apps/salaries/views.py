@@ -215,15 +215,19 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             'manual_amount_set':   salary.manual_amount_set,
         })
 
-    def _archived_students_for_group(self, group, salary_type, salary_percent, per_student_amt, course_price):
-        """Debt contributions of students who left this specific group.
+    def _archived_students_for_group(self, group, salary_type, salary_percent, per_student_amt, course_price, month):
+        """Per-former-student contribution to a group's salary total, for this billing month.
 
         coefficient mirrors calculate_teacher_salary(): the share of each
-        student's debt that becomes this teacher's salary.
+        student's debt that becomes this teacher's salary. Also mirrors its
+        Debt+Payments reconstruction (Rule 9: payment status must not affect
+        salary) so these figures sum consistently with the group's stored
+        calculated_amount instead of drifting from it.
         """
-        from django.db.models import Q
+        from django.db.models import Q, Sum
         from apps.groups.models import GroupStudent
         from apps.debts.models import Debt
+        from apps.payments.models import Payment
 
         if not group or salary_type not in ('percent', 'per_student'):
             return []
@@ -234,20 +238,27 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
             course_price = float(course_price or 0)
             coefficient = (float(per_student_amt or 0) / course_price) if course_price > 0 else 0
 
-        former_gs_ids = GroupStudent.objects.filter(group=group).filter(
+        former_gs = GroupStudent.objects.filter(group=group).filter(
             Q(status='left') | Q(student__status='archived')
-        ).values_list('id', flat=True)
+        ).select_related('student')
 
-        debts = Debt.objects.filter(
-            group_student_id__in=former_gs_ids,
-        ).select_related('group_student__student')
+        month_filter = (
+            Q(billing_month__year=month.year, billing_month__month=month.month) |
+            Q(billing_month__isnull=True, due_date__year=month.year, due_date__month=month.month)
+        )
 
         archived_students = []
-        for debt in debts:
-            student = debt.group_student.student
-            original_amount = float(debt.amount)
+        for gs in former_gs:
+            remaining = Debt.objects.filter(group_student=gs).filter(month_filter) \
+                .aggregate(total=Sum('amount'))['total'] or 0
+            paid = Payment.objects.filter(
+                group_student=gs, paid_at__year=month.year, paid_at__month=month.month,
+            ).aggregate(total=Sum('amount'))['total'] or 0
+            original_amount = float(remaining) + float(paid)
+            if original_amount <= 0:
+                continue
             archived_students.append({
-                'student_name': f"{student.first_name} {student.last_name}".strip(),
+                'student_name': f"{gs.student.first_name} {gs.student.last_name}".strip(),
                 'original_amount': original_amount,
                 'calculated_amount': round(original_amount * coefficient),
             })
@@ -322,12 +333,26 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                     salary.month.isoformat() if hasattr(salary.month, 'isoformat') else str(salary.month)
                 )
 
+            archived_students = self._archived_students_for_group(
+                salary.group, sdata.get('salary_type'),
+                sdata.get('salary_percent'), sdata.get('per_student_amt'),
+                sdata.get('course_price'), salary.month,
+            )
+            # active portion = group total minus the former-students' share, so
+            # active + archived always reconciles exactly to calculated_amount
+            # (single source of truth — no independently-derived total).
+            archived_calculated_total = sum(s['calculated_amount'] for s in archived_students)
+            active_calculated_amount = display_calculated - archived_calculated_total
+
             entry['groups'].append({
                 'salary_id':          str(salary.id),
                 'group_id':           sdata['group_id'],
                 'group_name':         sdata['group_name'],
                 'course_name':        sdata['course_name'],
                 'calculated_amount':  display_calculated,
+                'active_calculated_amount': active_calculated_amount,
+                'archived_calculated_total': archived_calculated_total,
+                'group_total':        display_calculated,
                 'paid_amount':        float(salary.paid_amount),
                 'carry_over':         carry_over,
                 'total_owed':         total_owed,
@@ -338,11 +363,7 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                 'course_price':       float(sdata['course_price'] or 0),
                 'kpi_amount':         kpi,
                 'archive_billing_type': salary.archive_billing_type,
-                'archived_students':  self._archived_students_for_group(
-                    salary.group, sdata.get('salary_type'),
-                    sdata.get('salary_percent'), sdata.get('per_student_amt'),
-                    sdata.get('course_price'),
-                ),
+                'archived_students':  archived_students,
             })
 
         # For fixed salary: replace null-group entry with teacher's actual active groups (display only)
@@ -395,6 +416,10 @@ class TeacherSalaryViewSet(CompanyFilterMixin, mixins.ListModelMixin,
                         'student_count':     student_count,
                         'course_price':      float(g.course.price) if g.course else 0,
                         'kpi_amount':        0,
+                        'active_calculated_amount': 0,
+                        'archived_calculated_total': 0,
+                        'group_total':       0,
+                        'archived_students': [],
                     })
                 if display_groups:
                     entry['groups'] = display_groups
