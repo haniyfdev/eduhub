@@ -37,23 +37,28 @@ def _apply_freeze_proration(gs, billing_type, now):
     if not course or not course.price:
         return
 
+    # now is a UTC instant; proration must count days in the company's own
+    # calendar (Asia/Tashkent), not UTC — otherwise every day between 19:00
+    # and 23:59 UTC (already "tomorrow" in Tashkent) gets billed a day short.
+    today = timezone.localtime(now).date()
+
     course_price = Decimal(str(course.price))
     calculated_amount = None
 
     if billing_type == 'per_lesson':
         from apps.lessons.models import Lesson
         from apps.attendance.models import Attendance
-        month_start = now.date().replace(day=1)
+        month_start = today.replace(day=1)
         total_lessons = Lesson.objects.filter(
             group=gs.group,
             date__gte=month_start,
-            date__lte=now.date(),
+            date__lte=today,
         ).count()
         attended = Attendance.objects.filter(
             student_id=gs.student_id,
             lesson__group=gs.group,
             lesson__date__gte=month_start,
-            lesson__date__lte=now.date(),
+            lesson__date__lte=today,
             status__in=['present', 'late'],
         ).count()
         if total_lessons > 0:
@@ -62,10 +67,11 @@ def _apply_freeze_proration(gs, billing_type, now):
             )
 
     elif billing_type == 'per_day':
-        month_start = now.date().replace(day=1)
-        effective_start = max(gs.joined_at.date(), month_start)
-        days_in_group = (now.date() - effective_start).days + 1
-        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        month_start = today.replace(day=1)
+        joined_local = timezone.localtime(gs.joined_at).date() if gs.joined_at else month_start
+        effective_start = max(joined_local, month_start)
+        days_in_group = (today - effective_start).days + 1
+        days_in_month = calendar.monthrange(today.year, today.month)[1]
         if days_in_month > 0:
             calculated_amount = (course_price / days_in_month * days_in_group).quantize(
                 Decimal('1E+3'), rounding=ROUND_HALF_UP
@@ -339,21 +345,24 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
             if course_price and billing_type != 'manual':
                 course_price = Decimal(str(course_price))
                 calculated_amount = None
+                # now is a UTC instant; proration must count days in the company's
+                # own calendar (Asia/Tashkent), not UTC (see _apply_freeze_proration).
+                today = timezone.localtime(now).date()
 
                 if billing_type == 'per_lesson':
                     from apps.lessons.models import Lesson
                     from apps.attendance.models import Attendance
-                    month_start = now.date().replace(day=1)
+                    month_start = today.replace(day=1)
                     total_lessons = Lesson.objects.filter(
                         group=group,
                         date__gte=month_start,
-                        date__lte=now.date(),
+                        date__lte=today,
                     ).count()
                     attended = Attendance.objects.filter(
                         student_id=student_id,
                         lesson__group=group,
                         lesson__date__gte=month_start,
-                        lesson__date__lte=now.date(),
+                        lesson__date__lte=today,
                         status__in=['present', 'late'],
                     ).count()
                     if total_lessons > 0:
@@ -364,10 +373,11 @@ class GroupViewSet(ArchiveMixin, CompanyFilterMixin, viewsets.ModelViewSet):
 
                 elif billing_type == 'per_day':
                     import calendar
-                    month_start = now.date().replace(day=1)
-                    effective_start = max(gs.joined_at.date(), month_start)
-                    days_in_group = (now.date() - effective_start).days + 1
-                    days_in_month = calendar.monthrange(now.year, now.month)[1]
+                    month_start = today.replace(day=1)
+                    joined_local = timezone.localtime(gs.joined_at).date() if gs.joined_at else month_start
+                    effective_start = max(joined_local, month_start)
+                    days_in_group = (today - effective_start).days + 1
+                    days_in_month = calendar.monthrange(today.year, today.month)[1]
                     if days_in_month > 0:
                         per_day = course_price / days_in_month
                         calculated_amount = (per_day * days_in_group).quantize(
